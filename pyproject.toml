@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctxwitch"
+version = "0.1.0"
+description = "Version control for AI context. Context PRs, eval-gating, semantic diffs, and deployment governance for prompts, RAG configs, tool definitions, and agent handovers."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Amey Kulkarni", email = "amey.inbox@gmail.com"},
+    {name = "ctxwitch"},
+]
+keywords = ["ai", "context", "versioning", "llm", "prompt-management", "a2a", "agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Version Control",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "gitpython>=3.1",
+    "jsonschema>=4.17",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+witch = "ctxwitch.cli.main:cli"
+ctxw = "ctxwitch.cli.main:cli"
+
+[tool.setuptools.packages.find]
+include = ["ctxwitch*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
