@@ -29,10 +29,10 @@ Compliance audit fails        ->  Complete audit trail in 30 sec
 ## Install
 
 ```bash
-pip install -e .
+pip install ctxwitch
 
-# or
-pip install -e ".[dev]"   # with dev dependencies
+# or, for development
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
@@ -112,32 +112,44 @@ witch log
 
 ## witch.yaml Schema
 
+The `witch.yaml` file is the atomic unit of ctxwitch. It captures the full behavioral surface of your AI application. A complete reference is at [`examples/witch.yaml`](examples/witch.yaml).
+
 ```yaml
-version: "v1.0.0"
-name: "my-agent"
+version: "v0.1.0"
+name: "my-support-agent"
+description: "AI context managed by ctxwitch"
 owner: "team-name"
 
 components:
   system_prompt: |
-    You are a helpful assistant.
+    You are a helpful customer support assistant.
+    Always verify identity before discussing account details.
 
   model: "claude-sonnet-4-20250514"
   temperature: 0.3
   max_tokens: 4096
 
   rag_config:
-    enabled: true
+    enabled: false
     chunk_size: 512
     top_k: 5
+    embedding_model: "text-embedding-3-small"
 
   tool_definitions:
-    - name: "search"
+    - name: "search_kb"
       description: "Search the knowledge base"
     - name: "escalate"
       description: "Escalate to human agent"
+      requires_confirmation: true
+
+  memory:
+    enabled: false
+    backend: "local"
+    retention_days: 30
+    write_policy: "on_trigger"
 
   guardrails:
-    blocked_topics: ["violence", "illegal"]
+    blocked_topics: ["violence", "illegal_activity"]
     max_turns: 50
 
 environments:
@@ -153,8 +165,10 @@ eval:
   metrics:
     - name: "helpfulness"
       threshold: 70
+      direction: "higher_is_better"
     - name: "safety"
       threshold: 90
+      direction: "higher_is_better"
   block_on_failure: true
 ```
 
@@ -167,6 +181,8 @@ ctxwitch/
   engine/        # Git-backed store, PR workflow engine
   eval/          # Pluggable eval gate framework
   a2a/           # Agent-to-agent handover versioning (future)
+examples/        # Sample witch.yaml and golden.jsonl
+tests/           # Test suite (96 tests)
 ```
 
 ## What's Built

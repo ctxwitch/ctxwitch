@@ -1,6 +1,11 @@
 # Private / local-only artifacts
 .private/
 
+# ctxwitch instance files (created by `witch init`)
+witch.yaml
+.ctxwitch/
+evals/
+
 # Python build & packaging
 *.egg-info/
 dist/

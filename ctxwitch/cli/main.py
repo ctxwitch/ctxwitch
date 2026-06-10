@@ -35,11 +35,12 @@ from ctxwitch import __version__
 console = Console()
 
 BANNER = r"""
-          _  _        _  _       _
-  __ __ _(_)| |_ __  | || |     | |
-  \ V  V / ||  _/ _| | __ |  _  | |__
-   \_/\_/|_| \__\__| |_||_| (_) |____|
-       context versioning for AI
+       _                _  _        _
+   ___| |_ ____ __ __ _(_)| |_ __  | |__
+  / __| __\ \/ /\ V  V / ||  _/ _| | '_ \
+ | (__| |_ >  <  \_/\_/|_| \__\__| | | | |
+  \___|\__/_/\_\                   |_| |_|
+        context versioning for AI
 """
 
 

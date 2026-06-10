@@ -1,8 +1,0 @@
-created_at: '2026-06-10T14:08:13.838608+00:00'
-owner: Amey Kulkarni
-project: my-support-agent
-settings:
-  auto_eval: true
-  canary_duration_minutes: 30
-  canary_percentage: 10
-  require_pr_for_main: true
