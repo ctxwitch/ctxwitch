@@ -1,6 +1,10 @@
 # ctxwitch
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20741295.svg)](https://doi.org/10.5281/zenodo.20741295)
+
 **Version control for AI context.** Context PRs, eval-gating, semantic diffs, and deployment governance for prompts, RAG configs, tool definitions, and agent handovers.
+
+ctxwitch is the reference implementation of [Context Change Impact Analysis (CCIA)](https://doi.org/10.5281/zenodo.20741295) — a discipline for predicting how changes to an AI agent's context configuration affect its observable behavior. The core engine, CBIA (Compound Behavioral Impact Analysis), is a 6-tier pipeline that scores any context change across 12 behavioral dimensions at 5 severity levels, deterministically, in under 100ms, without LLM inference.
 
 ## The Problem
 
@@ -174,6 +178,8 @@ eval:
 
 ## Architecture
 
+New to CBIA? See **[How CBIA Works (plain English)](docs/CBIA-explained.md)** — a beginner-friendly guide to the 6-tier pipeline and severity scorecard.
+
 ```
 ctxwitch/
   core/          # Context schema, model, diff engine, CBIA pipeline
@@ -205,6 +211,12 @@ tests/           # Test suite (96 tests)
 - CI/CD templates
 - Multi-agent context versioning
 - More to come — [follow the project](https://github.com/ctxwitch/ctxwitch) for updates
+
+## Research
+
+This tool implements the framework described in:
+
+> Kulkarni, A. A. (2026). *Context Change Impact Analysis: A Framework for Governing AI Agent Behavior Through Structured Context Versioning.* Zenodo. [https://doi.org/10.5281/zenodo.20741295](https://doi.org/10.5281/zenodo.20741295)
 
 ## License
 
