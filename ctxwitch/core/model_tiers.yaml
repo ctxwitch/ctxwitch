@@ -1,0 +1,22 @@
+# Model capability tier registry.
+#
+# Rules are evaluated top-down; the first rule whose pattern appears in the
+# (lowercased) model name wins, unless an unless_pattern also matches — then
+# evaluation falls through to the next rule. Unmatched names get default_tier.
+#
+# Override without forking: point CTXWITCH_MODEL_TIERS at your own YAML file.
+#
+# Tier 0: small/fast   Tier 1: mid   Tier 2: large   Tier 3: frontier
+
+default_tier: 1
+
+rules:
+  - tier: 3
+    patterns: ["o1", "o3", "deep-research", "opus-4", "fable", "mythos"]
+  - tier: 2
+    patterns: ["opus", "gpt-4o", "gpt-4-turbo", "pro", "gpt-5"]
+    unless_patterns: ["mini"]
+  - tier: 1
+    patterns: ["sonnet", "gpt-4o-mini", "flash", "gpt-3.5", "gemini-2"]
+  - tier: 0
+    patterns: ["haiku", "mini", "nano", "lite", "small", "tiny"]

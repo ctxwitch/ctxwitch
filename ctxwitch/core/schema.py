@@ -103,6 +103,16 @@ CONTEXT_SCHEMA = {
             "description": "Eval gate configuration",
             "properties": {
                 "golden_dataset": {"type": "string"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["structural", "live"],
+                    "description": "structural = config heuristics (default); live = run golden set against the model",
+                },
+                "max_examples": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Cap on golden examples used per live eval run (cost control)",
+                },
                 "metrics": {
                     "type": "array",
                     "items": {

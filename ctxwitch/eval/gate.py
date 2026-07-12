@@ -56,10 +56,19 @@ class EvalResult:
 
 
 class EvalGate:
-    """Pluggable eval gate that can run multiple evaluators."""
+    """Pluggable eval gate that can run multiple evaluators.
 
-    def __init__(self):
+    Two modes, chosen via `eval.mode` in witch.yaml:
+      structural (default) — deterministic config-shape heuristics; free and
+        instant, but they do NOT observe model behavior.
+      live — runs the golden dataset against the actual model with an LLM
+        judge (see ctxwitch.eval.runners). Falls back to structural, with a
+        warning note, when no provider is available.
+    """
+
+    def __init__(self, live_runner: Optional[Any] = None):
         self._evaluators: List[Callable] = []
+        self._live_runner = live_runner
 
     def register(self, evaluator: Callable) -> None:
         """Register an evaluator function.
@@ -91,28 +100,43 @@ class EvalGate:
 
         metrics_config = eval_config.get("metrics", [])
         results: List[MetricResult] = []
+        notes: List[str] = []
 
-        for metric_def in metrics_config:
-            name = metric_def["name"]
-            threshold = metric_def["threshold"]
-            direction = metric_def.get("direction", "higher_is_better")
-
-            score = self._evaluate_metric(name, context_data, golden)
-
-            if direction == "higher_is_better":
-                passed = score >= threshold
+        mode = eval_config.get("mode", "structural")
+        if mode == "live":
+            live_results = self._run_live(context_data, golden, eval_config, notes)
+            if live_results is not None:
+                results.extend(live_results)
             else:
-                passed = score <= threshold
+                mode = "structural"  # no provider — degrade honestly, not silently
 
-            results.append(
-                MetricResult(
-                    name=name,
-                    score=score,
-                    threshold=threshold,
-                    direction=direction,
-                    passed=passed,
-                )
+        if mode == "structural":
+            notes.append(
+                "Metrics are structural heuristics (no model calls). "
+                "Set eval.mode: live for behavioral scores."
             )
+            for metric_def in metrics_config:
+                name = metric_def["name"]
+                threshold = metric_def["threshold"]
+                direction = metric_def.get("direction", "higher_is_better")
+
+                score = self._evaluate_metric(name, context_data, golden)
+
+                if direction == "higher_is_better":
+                    passed = score >= threshold
+                else:
+                    passed = score <= threshold
+
+                results.append(
+                    MetricResult(
+                        name=name,
+                        score=score,
+                        threshold=threshold,
+                        direction=direction,
+                        passed=passed,
+                        detail="structural heuristic",
+                    )
+                )
 
         for evaluator in self._evaluators:
             try:
@@ -145,16 +169,46 @@ class EvalGate:
         return EvalResult(
             verdict=verdict,
             metrics=results,
+            notes=notes,
             golden_count=len(golden),
         )
+
+    def _run_live(
+        self,
+        context_data: Dict[str, Any],
+        golden: List[Dict],
+        eval_config: Dict[str, Any],
+        notes: List[str],
+    ) -> Optional[List[MetricResult]]:
+        """Run the live evaluator; returns None (with a note) when no
+        provider is configured so the caller can fall back to structural."""
+        from ctxwitch.eval.runners import DEFAULT_MAX_EXAMPLES, LiveEvalRunner, NoProviderError
+
+        runner = self._live_runner
+        if runner is None:
+            try:
+                runner = LiveEvalRunner()
+            except NoProviderError as e:
+                notes.append(f"live eval unavailable: {e} Falling back to structural heuristics.")
+                return None
+
+        results = runner.run(
+            context_data,
+            golden,
+            eval_config.get("metrics", []),
+            max_examples=eval_config.get("max_examples", DEFAULT_MAX_EXAMPLES),
+        )
+        notes.append(f"Live model eval over {min(len(golden), eval_config.get('max_examples', DEFAULT_MAX_EXAMPLES))} golden example(s).")
+        return results
 
     def _evaluate_metric(
         self, name: str, context_data: Dict[str, Any], golden: List[Dict]
     ) -> float:
-        """Built-in metric evaluation.
+        """Built-in structural metric heuristics.
 
-        In production this would call the actual model and score responses.
-        For now, provides structural validation scores.
+        These score configuration shape only — they never observe model
+        behavior. For behavioral scores use eval.mode: live, which runs the
+        golden dataset through the model (ctxwitch.eval.runners).
         """
         components = context_data.get("components", {})
 
