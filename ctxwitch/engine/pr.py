@@ -69,18 +69,26 @@ class PRStore:
         self.pr_dir.mkdir(parents=True, exist_ok=True)
 
     def _next_number(self) -> int:
-        existing = list(self.pr_dir.glob("*.json"))
-        if not existing:
-            return 1
-        numbers = []
-        for f in existing:
-            try:
-                with open(f) as fh:
-                    data = json.load(fh)
-                    numbers.append(data.get("number", 0))
-            except (json.JSONDecodeError, KeyError):
-                continue
+        numbers = [pr.number for pr in self.list_prs()]
         return max(numbers, default=0) + 1
+
+    def _load_file(self, path: Path) -> Optional[ContextPR]:
+        """Load a PR record, returning None for malformed or non-PR files.
+
+        The PR directory may contain files written by other tools; anything
+        that doesn't parse as a PR record is skipped rather than crashing.
+        """
+        try:
+            with open(path) as fh:
+                data = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        try:
+            return self._from_dict(data)
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def create(
         self,
@@ -110,20 +118,17 @@ class PRStore:
 
     def get(self, number: int) -> Optional[ContextPR]:
         for f in self.pr_dir.glob("*.json"):
-            with open(f) as fh:
-                data = json.load(fh)
-                if data.get("number") == number:
-                    return self._from_dict(data)
+            pr = self._load_file(f)
+            if pr and pr.number == number:
+                return pr
         return None
 
     def list_prs(self, status: Optional[PRStatus] = None) -> List[ContextPR]:
         prs = []
         for f in sorted(self.pr_dir.glob("*.json")):
-            with open(f) as fh:
-                data = json.load(fh)
-                pr = self._from_dict(data)
-                if status is None or pr.status == status:
-                    prs.append(pr)
+            pr = self._load_file(f)
+            if pr and (status is None or pr.status == status):
+                prs.append(pr)
         return prs
 
     def update_status(self, number: int, status: PRStatus) -> Optional[ContextPR]:

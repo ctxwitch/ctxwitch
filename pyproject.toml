@@ -46,6 +46,9 @@ ctxw = "ctxwitch.cli.main:cli"
 [tool.setuptools.packages.find]
 include = ["ctxwitch*"]
 
+[tool.setuptools.package-data]
+ctxwitch = ["core/*.yaml"]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 100

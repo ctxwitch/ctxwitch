@@ -8,6 +8,7 @@ with near-100% accuracy because they're structural, not linguistic.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ctxwitch.core.dimensions import (
@@ -399,32 +400,41 @@ def analyze_max_tokens_change(old: int, new: int) -> List[DimensionImpact]:
     )]
 
 
-def _model_tier(model_name: str) -> int:
-    """Classify model into capability tiers.
+_TIER_REGISTRY: Optional[Dict[str, Any]] = None
 
-    Tier 0: small/fast (haiku, mini, flash-lite)
-    Tier 1: mid (sonnet, gpt-4o-mini, flash)
-    Tier 2: large (opus, gpt-4o, pro)
-    Tier 3: frontier (o1, o3, deep-research)
+
+def _load_tier_registry() -> Dict[str, Any]:
+    """Load the model tier registry.
+
+    Models ship and rename faster than this library releases, so tiers live
+    in data (ctxwitch/core/model_tiers.yaml), overridable per-deployment via
+    the CTXWITCH_MODEL_TIERS environment variable.
     """
+    global _TIER_REGISTRY
+    if _TIER_REGISTRY is not None:
+        return _TIER_REGISTRY
+
+    import os
+
+    import yaml
+
+    override = os.environ.get("CTXWITCH_MODEL_TIERS")
+    path = Path(override) if override else Path(__file__).parent / "model_tiers.yaml"
+    with open(path) as f:
+        _TIER_REGISTRY = yaml.safe_load(f)
+    return _TIER_REGISTRY
+
+
+def _model_tier(model_name: str) -> int:
+    """Classify a model into a capability tier via the tier registry."""
+    registry = _load_tier_registry()
     name = model_name.lower()
 
-    tier3 = ["o1", "o3", "deep-research", "opus-4"]
-    if any(t in name for t in tier3):
-        return 3
+    for rule in registry.get("rules", []):
+        if not any(p in name for p in rule.get("patterns", [])):
+            continue
+        if any(p in name for p in rule.get("unless_patterns", [])):
+            continue
+        return int(rule["tier"])
 
-    tier2 = ["opus", "gpt-4o", "gpt-4-turbo", "pro", "gpt-5"]
-    if any(t in name for t in tier2):
-        if "mini" in name:
-            return 1
-        return 2
-
-    tier1 = ["sonnet", "gpt-4o-mini", "flash", "gpt-3.5", "gemini-2"]
-    if any(t in name for t in tier1):
-        return 1
-
-    tier0 = ["haiku", "mini", "nano", "lite", "small", "tiny"]
-    if any(t in name for t in tier0):
-        return 0
-
-    return 1
+    return int(registry.get("default_tier", 1))

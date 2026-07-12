@@ -154,15 +154,20 @@ class ContextStore:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "branch": self.current_branch,
         }
+        # Branch switches can prune the history dir when git leaves it empty.
+        self.history_path.mkdir(parents=True, exist_ok=True)
         history_file = self.history_path / f"{new_version}.json"
         with open(history_file, "w") as f:
             json.dump(history_entry, f, indent=2)
 
-        self._git("add", ".")
+        # Stage only what a context commit owns — never sweep up unrelated
+        # working-tree changes with a blanket `git add .`.
+        self._git("add", CONTEXT_FILE, str(history_file.relative_to(self.root)))
         commit_msg = f"witch: {message} [{new_version}]"
         self._git("commit", "-m", commit_msg)
 
         git_sha = self._git("rev-parse", "HEAD").strip()
+        self._tag_version(new_version)
 
         return CommitRecord(
             sha=git_sha[:8],
@@ -252,20 +257,60 @@ class ContextStore:
         if not history_file.exists():
             raise ValueError(f"Version {version} not found in history")
 
-        with open(history_file) as f:
-            entry = json.load(f)
-
-        git_log = self._git("log", "--oneline", "--all", f"--grep=\\[{version}\\]")
-        lines = [l for l in git_log.strip().split("\n") if l.strip()]
-        if not lines:
+        commit_sha = self._resolve_version_commit(version)
+        if not commit_sha:
             raise ValueError(f"Git commit for version {version} not found")
 
-        commit_sha = lines[0].split()[0]
         self._git("checkout", commit_sha, "--", CONTEXT_FILE)
         self._git("add", CONTEXT_FILE)
         self._git("commit", "-m", f"witch rollback to {version}")
 
         return load_context(self.context_path)
+
+    def merge(self, branch: str, message: str = "", no_ff: bool = True) -> str:
+        """Merge a context branch into the current branch.
+
+        Returns the merge commit sha. Raises subprocess.CalledProcessError
+        on conflicts (the caller decides how to resolve or abort).
+        """
+        self._require_init()
+        msg = message or f"witch merge: {branch} into {self.current_branch}"
+        args = ["merge"]
+        if no_ff:
+            args.append("--no-ff")
+        args.extend([branch, "-m", msg])
+        try:
+            self._git(*args)
+        except subprocess.CalledProcessError:
+            # Leave the tree clean rather than half-merged.
+            self._git("merge", "--abort")
+            raise
+        return self._git("rev-parse", "HEAD").strip()
+
+    def _tag_version(self, version: str) -> None:
+        """Tag the current commit so versions resolve without log-grepping.
+
+        Namespaced under witch/ to avoid colliding with the host repo's
+        own release tags.
+        """
+        try:
+            self._git("tag", f"witch/{version}")
+        except subprocess.CalledProcessError:
+            pass  # tag exists (e.g. re-init over old history) — keep the original
+
+    def _resolve_version_commit(self, version: str) -> Optional[str]:
+        """Resolve a context version to a commit sha: tag first, then the
+        legacy commit-message grep for histories created before tagging."""
+        try:
+            return self._git("rev-list", "-n", "1", f"witch/{version}").strip()
+        except subprocess.CalledProcessError:
+            pass
+
+        git_log = self._git("log", "--oneline", "--all", f"--grep=\\[{version}\\]")
+        lines = [l for l in git_log.strip().split("\n") if l.strip()]
+        if not lines:
+            return None
+        return lines[0].split()[0]
 
     def _require_init(self):
         if not self.is_initialized:
