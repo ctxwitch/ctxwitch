@@ -27,18 +27,14 @@ from ctxwitch.core.dimensions import (
     Severity,
 )
 from ctxwitch.core.impact import (
-    analyze_guardrail_changes,
-    analyze_max_tokens_change,
-    analyze_memory_changes,
-    analyze_model_change,
-    analyze_rag_changes,
-    analyze_temperature_change,
-    analyze_tool_changes,
+    analyze_component_structural,
+    analyze_environment_changes,
 )
 from ctxwitch.core.similarity import (
     analyze_segment_changes,
     contradictions_to_impacts,
     detect_contradictions,
+    detect_numeric_threshold_changes,
     match_segments,
 )
 
@@ -66,36 +62,13 @@ def analyze_behavioral_impact(
     old_comp = old_data.get("components", {})
     new_comp = new_data.get("components", {})
 
-    old_temp = old_comp.get("temperature")
-    new_temp = new_comp.get("temperature")
-    if old_temp is not None and new_temp is not None:
-        all_impacts.extend(analyze_temperature_change(old_temp, new_temp))
+    all_impacts.extend(analyze_component_structural(old_comp, new_comp))
 
-    old_model = old_comp.get("model", "")
-    new_model = new_comp.get("model", "")
-    if old_model or new_model:
-        all_impacts.extend(analyze_model_change(old_model, new_model))
-
-    old_tools = old_comp.get("tool_definitions", [])
-    new_tools = new_comp.get("tool_definitions", [])
-    all_impacts.extend(analyze_tool_changes(old_tools, new_tools))
-
-    old_rag = old_comp.get("rag_config", {})
-    new_rag = new_comp.get("rag_config", {})
-    all_impacts.extend(analyze_rag_changes(old_rag, new_rag))
-
-    old_guard = old_comp.get("guardrails", {})
-    new_guard = new_comp.get("guardrails", {})
-    all_impacts.extend(analyze_guardrail_changes(old_guard, new_guard))
-
-    old_mem = old_comp.get("memory", {})
-    new_mem = new_comp.get("memory", {})
-    all_impacts.extend(analyze_memory_changes(old_mem, new_mem))
-
-    old_max = old_comp.get("max_tokens", 0)
-    new_max = new_comp.get("max_tokens", 0)
-    if old_max and new_max:
-        all_impacts.extend(analyze_max_tokens_change(old_max, new_max))
+    # ── Tier 1b: Environment override deltas ────────────────────────────
+    # Production behavior = base ⊕ prod-override. A change confined to an
+    # environment override moves real deployed behavior while base is
+    # untouched, so it must be scored too.
+    all_impacts.extend(analyze_environment_changes(old_data, new_data))
 
     # ── Tier 2+3: Prompt decomposition + segment similarity ─────────────
 
@@ -111,11 +84,16 @@ def analyze_behavioral_impact(
         segment_impacts = analyze_segment_changes(segment_matches)
         all_impacts.extend(segment_impacts)
 
-        # ── Tier 4: Directive contradiction detection ───────────────────
+        # ── Tier 4: Directive contradiction + threshold detection ───────
 
         contradictions = detect_contradictions(old_decomposed, new_decomposed)
         contradiction_impacts = contradictions_to_impacts(contradictions)
         all_impacts.extend(contradiction_impacts)
+
+        # Numeric threshold shifts hide inside high-similarity matches
+        # (Tier 3 scores "$100 → $500" as cosmetic), so they get their
+        # own detector.
+        all_impacts.extend(detect_numeric_threshold_changes(segment_matches))
 
     # ── Tier 5: Dimension scoring + compound severity ───────────────────
 

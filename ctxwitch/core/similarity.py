@@ -225,6 +225,93 @@ def analyze_segment_changes(matches: List[SegmentMatch]) -> List[DimensionImpact
     return impacts
 
 
+# ─── Numeric Threshold Detection ───────────────────────────────────────────
+
+# Currency/percent-aware number token, e.g. $100, 1,000, 3.5, 20%, €50
+_NUMBER_RE = re.compile(r"[$€£₹]?\d[\d,]*(?:\.\d+)?%?")
+
+_DIRECTIVE_TYPES = {
+    SegmentType.CONSTRAINT_MUST,
+    SegmentType.CONSTRAINT_MUST_NOT,
+    SegmentType.SAFETY,
+    SegmentType.DECISION_RULE,
+    SegmentType.ESCALATION,
+}
+
+
+def detect_numeric_threshold_changes(
+    matches: List[SegmentMatch],
+) -> List[DimensionImpact]:
+    """Detect numeric threshold changes inside otherwise-unchanged segments.
+
+    "Escalate refunds above $100" → "Escalate refunds above $500" is nearly
+    identical textually (similarity ~0.95, so Tier 3 scores it Cosmetic at
+    best), but the number is the behaviorally load-bearing part of the rule.
+    This detector compares matched segments with their numbers masked out:
+    if the surrounding text is (near-)identical while the numbers differ,
+    the change is a threshold shift, not a rewording.
+    """
+    impacts: List[DimensionImpact] = []
+
+    for m in matches:
+        if m.match_type != "matched" or not m.old_segment or not m.new_segment:
+            continue
+
+        old_nums = _NUMBER_RE.findall(m.old_segment.text)
+        new_nums = _NUMBER_RE.findall(m.new_segment.text)
+        if old_nums == new_nums or (not old_nums and not new_nums):
+            continue
+
+        old_masked = _mask_numbers(m.old_segment.text)
+        new_masked = _mask_numbers(m.new_segment.text)
+        if old_masked == new_masked:
+            confidence = 0.95
+        elif _fallback_similarity(old_masked, new_masked) > 0.8:
+            # numbers changed amid light rewording — still likely a threshold shift
+            confidence = 0.75
+        else:
+            continue  # a real rewrite; Tier 3 already scored it
+
+        seg_type = m.old_segment.segment_type
+        dimension = SEGMENT_TO_DIMENSION.get(seg_type, Dimension.CONSTRAINTS)
+        severity = (
+            Severity.SIGNIFICANT if seg_type in _DIRECTIVE_TYPES else Severity.MINOR
+        )
+
+        changed = _describe_number_change(old_nums, new_nums)
+        impacts.append(DimensionImpact(
+            dimension=dimension,
+            severity=severity,
+            reason=(
+                f"Numeric threshold changed in {dimension.display_name.lower()} "
+                f"directive: {changed}. The rule's wording is unchanged — only "
+                f"its trigger value moved."
+            ),
+            old_signal=m.old_segment.text,
+            new_signal=m.new_segment.text,
+            confidence=confidence,
+        ))
+
+    return impacts
+
+
+def _mask_numbers(text: str) -> str:
+    """Replace number tokens with a placeholder and normalize whitespace."""
+    return " ".join(_NUMBER_RE.sub("#", text).split()).lower()
+
+
+def _describe_number_change(old_nums: List[str], new_nums: List[str]) -> str:
+    """Human-readable summary of which numbers moved."""
+    changed = [
+        f"{o} → {n}" for o, n in zip(old_nums, new_nums) if o != n
+    ]
+    if len(old_nums) > len(new_nums):
+        changed.extend(f"{o} removed" for o in old_nums[len(new_nums):])
+    elif len(new_nums) > len(old_nums):
+        changed.extend(f"{n} added" for n in new_nums[len(old_nums):])
+    return ", ".join(changed)
+
+
 # ─── Contradiction Detection ───────────────────────────────────────────────
 
 _NEGATION_PAIRS = [
@@ -257,11 +344,89 @@ _WEAKENING_PATTERNS = [
     (r"\boptional\b", r"\brequired\b", "strengthened"),
 ]
 
+# Canonical (apostrophe-less, lowercase) negation vocabulary. Tokens are
+# normalized before lookup, so "don't", "dont", "Don't." and the curly
+# "don’t" all resolve to the same entry.
 _NEGATION_WORDS = {
-    "not", "never", "no", "don't", "doesn't", "won't", "cannot",
-    "can't", "shouldn't", "mustn't", "without", "neither", "nor",
+    "not", "never", "no", "dont", "doesnt", "wont", "cannot",
+    "cant", "shouldnt", "mustnt", "isnt", "arent", "didnt",
+    "couldnt", "wouldnt", "without", "neither", "nor",
     "refuse", "reject", "deny", "prohibit", "forbid", "block",
 }
+
+# Words eligible for typo-tolerant (edit-distance-1) matching. Restricted to
+# longer, distinctive entries; short words like "no"/"deny"/"wont" are exact-
+# only because their 1-edit neighborhoods collide with everyday words
+# ("want", "eject", "won").
+_FUZZY_NEGATION = {
+    w for w in _NEGATION_WORDS if len(w) >= 5 and w != "block"
+}
+
+# Legitimate words that sit one edit away from a negation term and must never
+# count as one: ever/never is handled by the length gate; these are not.
+_FUZZY_STOPLIST = {
+    "either",   # 1 edit from "neither"
+    "reuse",    # 1 edit from "refuse"
+    "eject",    # 1 edit from "reject"
+    "fever", "lever", "sever",  # 1 edit from "never"
+    "cannon",   # 1 edit from "cannot"
+    "black",    # 1 edit from "block" (also excluded via _FUZZY_NEGATION)
+}
+
+_SUFFIXES = ("s", "es", "ed", "ing")
+
+_PUNCT_STRIP = ".,;:!?()[]{}\"'`‘’“”"
+
+
+def _normalize_token(token: str) -> str:
+    """Lowercase, strip surrounding punctuation, drop apostrophes."""
+    t = token.lower().strip(_PUNCT_STRIP)
+    return t.replace("'", "").replace("’", "")
+
+
+def _edit_distance_leq1(a: str, b: str) -> bool:
+    """True when a and b differ by at most one insert/delete/substitute."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = j = edits = 0
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if la == lb:
+            i += 1
+        j += 1
+    return True
+
+
+def _is_negation_token(token: str) -> bool:
+    """Vocabulary lookup with normalization, morphology, and typo tolerance."""
+    t = _normalize_token(token)
+    if not t:
+        return False
+    if t in _NEGATION_WORDS:
+        return True
+    # simple morphology: refuses / rejected / forbidding → base form
+    for suffix in _SUFFIXES:
+        if t.endswith(suffix) and t[: -len(suffix)] in _NEGATION_WORDS:
+            return True
+    # guarded typo tolerance: one edit from a long, distinctive negation word
+    if len(t) >= 5 and t not in _FUZZY_STOPLIST:
+        return any(_edit_distance_leq1(t, w) for w in _FUZZY_NEGATION)
+    return False
+
+
+def _count_negations(text: str) -> int:
+    return sum(1 for tok in text.split() if _is_negation_token(tok))
 
 
 def detect_contradictions(
@@ -300,8 +465,8 @@ def detect_contradictions(
                     ))
                     break
 
-            old_neg_count = sum(1 for w in old_d.lower().split() if w in _NEGATION_WORDS)
-            new_neg_count = sum(1 for w in new_d.lower().split() if w in _NEGATION_WORDS)
+            old_neg_count = _count_negations(old_d)
+            new_neg_count = _count_negations(new_d)
 
             if abs(old_neg_count - new_neg_count) > 0 and _text_overlap(old_d, new_d) > 0.4:
                 if old_neg_count > new_neg_count:
@@ -438,9 +603,9 @@ def _extract_directives(prompt: DecomposedPrompt) -> List[str]:
 
 
 def _text_overlap(a: str, b: str) -> float:
-    """Quick token overlap ratio."""
-    tokens_a = set(a.lower().split())
-    tokens_b = set(b.lower().split())
+    """Quick token overlap ratio (punctuation/apostrophe-normalized)."""
+    tokens_a = {t for t in (_normalize_token(w) for w in a.split()) if t}
+    tokens_b = {t for t in (_normalize_token(w) for w in b.split()) if t}
     if not tokens_a or not tokens_b:
         return 0.0
     return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)

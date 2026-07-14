@@ -41,6 +41,16 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
+New here? The fastest way in is the guided tour — it creates a disposable
+sandbox agent and walks you through the whole loop (behavioral diff → commit →
+branch → breaking change → Context PR → eval gate) in about 3 minutes:
+
+```bash
+witch tour
+```
+
+Or do it manually:
+
 ```bash
 # Initialize a project
 witch init my-support-agent
@@ -95,6 +105,7 @@ witch log
 | `witch pr create -t "title"` | Create a context PR from current branch |
 | `witch pr list` | List all context PRs |
 | `witch pr show <number>` | Show PR details with diff and comments |
+| `witch pr merge <number>` | Merge a PR (blocked on Breaking changes unless `--allow-breaking`) |
 
 ### Inspect
 
