@@ -124,3 +124,38 @@ def test_spell_export_json(runner, tmp_project):
     result = runner.invoke(cli, ["spell", "export", "--format", "json"])
     assert result.exit_code == 0
     assert '"version"' in result.output
+
+
+def test_eval_blocked_by_breaking_behavioral_change(runner, tmp_project):
+    """Metrics passing must not green-light a Breaking behavioral change."""
+    import yaml
+
+    runner.invoke(cli, ["init", "test-project"])
+
+    # second commit so behavioral analysis has a HEAD~1 to compare against
+    data = yaml.safe_load(Path("witch.yaml").read_text())
+    data["components"]["system_prompt"] = "You are a helpful support assistant."
+    Path("witch.yaml").write_text(yaml.dump(data, sort_keys=False))
+    runner.invoke(cli, ["commit", "-m", "baseline"])
+
+    # breaking change in the working tree: enable RAG (Knowledge Scope: Breaking)
+    data = yaml.safe_load(Path("witch.yaml").read_text())
+    data["components"]["rag_config"]["enabled"] = True
+    data["components"]["rag_config"]["source"] = "s3://docs/"
+    Path("witch.yaml").write_text(yaml.dump(data, sort_keys=False))
+    runner.invoke(cli, ["commit", "-m", "enable rag"])
+
+    result = runner.invoke(cli, ["eval"])
+    assert result.exit_code == 2
+    assert "BLOCKED" in result.output
+
+    result = runner.invoke(cli, ["eval", "--allow-breaking"])
+    assert result.exit_code == 0
+    assert "OVERRIDE" in result.output
+
+
+def test_eval_passes_cleanly_without_breaking_changes(runner, tmp_project):
+    runner.invoke(cli, ["init", "test-project"])
+    result = runner.invoke(cli, ["eval"])
+    assert result.exit_code == 0
+    assert "PASSED" in result.output

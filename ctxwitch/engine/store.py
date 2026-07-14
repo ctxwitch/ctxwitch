@@ -179,7 +179,7 @@ class ContextStore:
             branch=self.current_branch,
         )
 
-    def diff(self, ref: str = "HEAD~1") -> ContextDiff:
+    def diff(self, ref: str = "HEAD") -> ContextDiff:
         """Diff current context against a ref (branch, commit, or tag)."""
         self._require_init()
 

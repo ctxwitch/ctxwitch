@@ -110,8 +110,17 @@ _PERSONA_PATTERNS = [
 ]
 
 _CONSTRAINT_MUST_NOT_PATTERNS = [
-    (re.compile(r"^(?:you\s+)?(?:must|should|shall)\s+(?:not|never)\s+", re.I), 0.95, "must not..."),
-    (re.compile(r"^(?:do\s+not|don'?t|never)\s+", re.I), 0.95, "do not..."),
+    # Covers spaced, contracted, and typo'd (apostrophe-less) negated modals:
+    # "must not", "mustn't", "mustnt", "don't", "dont", "cannot", "can't",
+    # "won't", "shouldn't", ... — straight or curly apostrophe. Verdicts must
+    # not depend on orthography (see tests/test_negation_robustness.py).
+    (re.compile(
+        r"^(?:you\s+)?(?:cannot|can[’']?t|won[’']?t|"
+        r"(?:must|should|shall|will|can|do|does|did|could|would)"
+        r"(?:n[’']?t|\s+(?:not|never)))\s+",
+        re.I,
+    ), 0.95, "must not..."),
+    (re.compile(r"^(?:do\s+not|don[’']?t|never)\s+", re.I), 0.95, "do not..."),
     (re.compile(r"^avoid\s+", re.I), 0.85, "avoid..."),
     (re.compile(r"^(?:it\s+is\s+)?(?:forbidden|prohibited|not\s+allowed)\s+", re.I), 0.90, "forbidden..."),
     (re.compile(r"^refrain\s+from\s+", re.I), 0.85, "refrain from..."),

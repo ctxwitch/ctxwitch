@@ -19,6 +19,128 @@ from ctxwitch.core.dimensions import (
 )
 
 
+def analyze_component_structural(
+    old_comp: Dict[str, Any], new_comp: Dict[str, Any]
+) -> List[DimensionImpact]:
+    """Run every Tier-1 structural analyzer over two `components` blocks.
+
+    Shared by the base-context pass and the per-environment pass so the
+    behavioral tables live in exactly one place.
+    """
+    impacts: List[DimensionImpact] = []
+
+    old_temp = old_comp.get("temperature")
+    new_temp = new_comp.get("temperature")
+    if old_temp is not None and new_temp is not None:
+        impacts.extend(analyze_temperature_change(old_temp, new_temp))
+
+    old_model = old_comp.get("model", "")
+    new_model = new_comp.get("model", "")
+    if old_model or new_model:
+        impacts.extend(analyze_model_change(old_model, new_model))
+
+    impacts.extend(analyze_tool_changes(
+        old_comp.get("tool_definitions", []), new_comp.get("tool_definitions", [])
+    ))
+    impacts.extend(analyze_rag_changes(
+        old_comp.get("rag_config", {}), new_comp.get("rag_config", {})
+    ))
+    impacts.extend(analyze_guardrail_changes(
+        old_comp.get("guardrails", {}), new_comp.get("guardrails", {})
+    ))
+    impacts.extend(analyze_memory_changes(
+        old_comp.get("memory", {}), new_comp.get("memory", {})
+    ))
+
+    old_max = old_comp.get("max_tokens", 0)
+    new_max = new_comp.get("max_tokens", 0)
+    if old_max and new_max:
+        impacts.extend(analyze_max_tokens_change(old_max, new_max))
+
+    return impacts
+
+
+# Environments whose overrides shape production behavior. Changes here are
+# not de-risked; non-production environments are (see analyze_environment_changes).
+_PROD_ENVS = {"prod", "production", "prd", "live"}
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Return base with override deep-merged on top (base untouched)."""
+    from copy import deepcopy
+
+    result = deepcopy(base)
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = deepcopy(value)
+    return result
+
+
+def analyze_environment_changes(
+    old_data: Dict[str, Any], new_data: Dict[str, Any]
+) -> List[DimensionImpact]:
+    """Detect behavioral changes that live only in environment overrides.
+
+    The context actually deployed to production is base ⊕ prod-override. A
+    change to a prod override (e.g. prod temperature 0.3 → 0.9, or a prod
+    guardrail removed) moves real production behavior while base `components`
+    is untouched — so the base pass reports "No Change". This analyzer runs
+    the Tier-1 structural tables on each environment's *effective* context
+    and emits any impact the base pass did not already cover.
+
+    Non-production environments (dev/staging) are de-risked one level, since
+    a dev-only change is real but lower blast-radius; production overrides
+    keep full severity.
+    """
+    old_envs = old_data.get("environments") or {}
+    new_envs = new_data.get("environments") or {}
+    if old_envs == new_envs:
+        return []
+
+    base_old = old_data.get("components", {})
+    base_new = new_data.get("components", {})
+
+    # Impacts already reported by the base pass — deduped by (dimension, reason)
+    # so an override that merely restates a base change is not double-counted.
+    base_keys = {
+        (i.dimension, i.reason)
+        for i in analyze_component_structural(base_old, base_new)
+    }
+
+    impacts: List[DimensionImpact] = []
+    for env in sorted(set(old_envs) | set(new_envs)):
+        old_over = (old_envs.get(env) or {}).get("components", {})
+        new_over = (new_envs.get(env) or {}).get("components", {})
+        if old_over == new_over:
+            continue
+
+        old_eff = _deep_merge(base_old, old_over)
+        new_eff = _deep_merge(base_new, new_over)
+        is_prod = env.lower() in _PROD_ENVS
+
+        for imp in analyze_component_structural(old_eff, new_eff):
+            if (imp.dimension, imp.reason) in base_keys:
+                continue  # base pass already surfaced this exact change
+
+            severity = imp.severity
+            if not is_prod and severity > Severity.SIGNIFICANT:
+                severity = Severity.SIGNIFICANT
+
+            tag = "prod" if is_prod else env
+            impacts.append(DimensionImpact(
+                dimension=imp.dimension,
+                severity=severity,
+                reason=f"[{tag} override] {imp.reason}",
+                old_signal=imp.old_signal,
+                new_signal=imp.new_signal,
+                confidence=imp.confidence,
+            ))
+
+    return impacts
+
+
 def analyze_temperature_change(old: float, new: float) -> List[DimensionImpact]:
     delta = abs(new - old)
     if delta == 0:

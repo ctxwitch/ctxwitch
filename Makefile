@@ -9,6 +9,12 @@ dev:
 test:
 	python -m pytest tests/ -v --tb=short
 
+bench:
+	python ccia-bench/run_benchmark.py
+
+bench-generate:
+	python ccia-bench/generate_pairs.py
+
 lint:
 	python -m ruff check ctxwitch/ tests/
 

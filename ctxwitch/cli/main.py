@@ -3,6 +3,7 @@
 Primary command: witch (alias: ctxw)
 
 Commands:
+    witch tour               Guided hands-on walkthrough (start here)
     witch init <name>        Initialize a new ctxwitch project
     witch checkout <branch>  Switch to a context branch
     witch commit             Commit context changes with version bump
@@ -56,6 +57,8 @@ def cli():
 
     Manage prompts, RAG configs, tool definitions, and agent handovers
     with git-backed versioning, semantic diffs, eval gates, and context PRs.
+
+    New here? Run: witch tour
     """
     pass
 
@@ -198,7 +201,7 @@ def commit(message: str, bump: str, author: str):
 # ─── diff ────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--ref", default="HEAD~1", help="Reference to diff against")
+@click.option("--ref", default="HEAD", help="Reference to diff against (default: last commit, like git diff)")
 @click.option("--behavioral/--no-behavioral", default=True, help="Show behavioral impact analysis")
 @click.option("--judge", is_flag=True, default=False, help="Enable Tier 6 LLM-as-judge for deeper analysis")
 @click.option("--strict", is_flag=True, default=False, help="Exit non-zero on SIGNIFICANT+ changes (for CI)")
@@ -518,6 +521,83 @@ def pr_create(title: str, base: str):
     console.print(f"\n[dim]Run [bold]witch eval[/] to trigger eval gate[/]")
 
 
+@pr.command(name="merge")
+@click.argument("number", type=int)
+@click.option(
+    "--allow-breaking",
+    is_flag=True,
+    default=False,
+    help="Merge even when CBIA finds breaking behavioral changes",
+)
+def pr_merge(number: int, allow_breaking: bool):
+    """Merge a context PR into its base branch.
+
+    Re-runs the CBIA behavioral check (branch vs base) at merge time;
+    breaking changes block the merge unless --allow-breaking is given.
+    """
+    import yaml as _yaml
+
+    from ctxwitch.core.behavioral import analyze_behavioral_impact
+    from ctxwitch.engine.pr import PRStatus, PRStore
+
+    store = get_store()
+    pr_store = PRStore(store.root)
+
+    context_pr = pr_store.get(number)
+    if not context_pr:
+        console.print(f"[red]Error:[/] PR #{number} not found")
+        sys.exit(1)
+    if context_pr.status in (PRStatus.MERGED, PRStatus.CLOSED):
+        console.print(f"[red]Error:[/] PR #{number} is already {context_pr.status.value}")
+        sys.exit(1)
+
+    # Behavioral gate at merge time — no checkout needed for the check.
+    try:
+        old_data = _yaml.safe_load(store._git("show", f"{context_pr.base}:witch.yaml")) or {}
+        new_data = _yaml.safe_load(store._git("show", f"{context_pr.branch}:witch.yaml")) or {}
+        report = analyze_behavioral_impact(old_data, new_data)
+    except Exception:
+        report = None
+
+    if report is not None and report.breaking_changes and not allow_breaking:
+        dims = ", ".join(i.dimension.display_name for i in report.breaking_changes)
+        console.print(
+            f"[red]Merge blocked — CBIA found breaking behavioral change(s) "
+            f"in: {dims}.[/]"
+        )
+        console.print(
+            "[dim]If this change is reviewed and intentional, rerun with "
+            "--allow-breaking.[/]"
+        )
+        sys.exit(2)
+
+    try:
+        store.checkout(context_pr.base)
+        sha = store.merge(
+            context_pr.branch,
+            message=f"witch merge: PR #{number} — {context_pr.title}",
+        )
+    except Exception as e:
+        console.print(f"[red]Merge failed:[/] {e}")
+        console.print("[dim]Resolve conflicts on the branch, then retry.[/]")
+        sys.exit(1)
+
+    pr_store.update_status(number, PRStatus.MERGED)
+
+    override_note = " (breaking changes overridden)" if (
+        report is not None and report.breaking_changes
+    ) else ""
+    console.print(
+        Panel(
+            f"[bold green]Merged PR #{number}[/]{override_note}\n"
+            f"[dim]Branch:[/] {context_pr.branch} → {context_pr.base}\n"
+            f"[dim]Commit:[/] {sha[:8]}",
+            title="witch pr merge",
+            border_style="green",
+        )
+    )
+
+
 @pr.command(name="list")
 @click.option("--status", "status_filter", default=None, help="Filter by status")
 def pr_list(status_filter):
@@ -622,8 +702,20 @@ def pr_show(number: int):
 @cli.command()
 @click.option("--ref", default=None, help="Reference to compare against for behavioral analysis")
 @click.option("--judge", is_flag=True, default=False, help="Enable Tier 6 LLM-as-judge")
-def eval(ref: str, judge: bool):
-    """Run eval gates and behavioral impact analysis on current context."""
+@click.option(
+    "--allow-breaking",
+    is_flag=True,
+    default=False,
+    help="Pass the gate even when CBIA finds breaking behavioral changes",
+)
+def eval(ref: str, judge: bool, allow_breaking: bool):
+    """Run eval gates and behavioral impact analysis on current context.
+
+    The gate has two parts: metric thresholds (scored on the new context)
+    and the CBIA behavioral analysis (scored on the change). Both must be
+    clean for the gate to pass; breaking behavioral changes block it
+    unless --allow-breaking is given.
+    """
     store = get_store()
 
     from ctxwitch.core.context import load_context
@@ -675,16 +767,37 @@ def eval(ref: str, judge: bool):
     if result.golden_count:
         console.print(f"[dim]Tested against {result.golden_count} golden examples[/]")
 
+    report = None
     if ref or _has_previous_commit(store):
         actual_ref = ref or "HEAD~1"
         try:
-            _show_behavioral_impact(store, actual_ref, use_judge=judge)
+            report = _show_behavioral_impact(store, actual_ref, use_judge=judge)
         except Exception:
-            pass
+            report = None
 
     if not result.passed:
-        console.print("\n[red]Eval gate failed. Merge blocked.[/]")
+        console.print("\n[red]Gate verdict: FAILED — metric threshold(s) not met. Merge blocked.[/]")
         sys.exit(1)
+
+    if report is not None and report.breaking_changes:
+        if allow_breaking:
+            console.print(
+                "\n[yellow]Gate verdict: PASSED WITH OVERRIDE — metrics passed; "
+                "breaking behavioral change(s) allowed via --allow-breaking.[/]"
+            )
+            return
+        dims = ", ".join(i.dimension.display_name for i in report.breaking_changes)
+        console.print(
+            f"\n[red]Gate verdict: BLOCKED — metrics passed, but CBIA found "
+            f"breaking behavioral change(s) in: {dims}.[/]"
+        )
+        console.print(
+            "[dim]If this change is intentional and reviewed, rerun with "
+            "--allow-breaking.[/]"
+        )
+        sys.exit(2)
+
+    console.print("\n[green]Gate verdict: PASSED[/]")
 
 
 def _has_previous_commit(store) -> bool:
@@ -914,6 +1027,11 @@ def branches():
     except Exception as e:
         console.print(f"[red]Error:[/] {e}")
         sys.exit(1)
+
+
+from ctxwitch.cli.tour import tour  # noqa: E402
+
+cli.add_command(tour)
 
 
 def main():
