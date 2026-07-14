@@ -53,10 +53,11 @@ def get_store():
 @click.group()
 @click.version_option(__version__, prog_name="ctxwitch")
 def cli():
-    """ctxwitch — Version control for AI context.
+    """ctxwitch — Version control for AI agent behavior.
 
-    Manage prompts, RAG configs, tool definitions, and agent handovers
-    with git-backed versioning, semantic diffs, eval gates, and context PRs.
+    Git tells you what changed in your prompt; ctxwitch tells you what
+    the change will do — semantic diffs across 12 behavioral dimensions,
+    eval gates, and Context PRs.
 
     New here? Run: witch tour
     """

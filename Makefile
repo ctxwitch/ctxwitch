@@ -15,6 +15,9 @@ bench:
 bench-generate:
 	python ccia-bench/generate_pairs.py
 
+demo-gif:
+	vhs docs/demo.tape
+
 lint:
 	python -m ruff check ctxwitch/ tests/
 
