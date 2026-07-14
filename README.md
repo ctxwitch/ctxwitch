@@ -2,7 +2,9 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20741295.svg)](https://doi.org/10.5281/zenodo.20741295)
 
-**Version control for AI context.** Context PRs, eval-gating, semantic diffs, and deployment governance for prompts, RAG configs, tool definitions, and agent handovers.
+**Version control for AI agent behavior.** Git tells you what changed in your prompt — ctxwitch tells you what the change will *do*: semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails.
+
+![witch tour demo — a prompt edit scored as a behavioral change across 12 dimensions](docs/demo.gif)
 
 ctxwitch is the reference implementation of [Context Change Impact Analysis (CCIA)](https://doi.org/10.5281/zenodo.20741295) — a discipline for predicting how changes to an AI agent's context configuration affect its observable behavior. The core engine, CBIA (Compound Behavioral Impact Analysis), is a 6-tier pipeline that scores any context change across 12 behavioral dimensions at 5 severity levels, deterministically, in under 100ms, without LLM inference.
 
@@ -17,7 +19,7 @@ Neither pattern supports safe, collaborative, multi-stakeholder contribution to 
 
 ## The Solution
 
-ctxwitch treats AI context like code -- but better. Every change goes through a **Context PR** with semantic diffs, automated eval gates, review workflows, and canary deployments.
+ctxwitch treats AI context like code -- but better. Every change goes through a **Context PR** with semantic diffs, automated eval gates, review workflows, and one-command rollback.
 
 ```
 WITHOUT ctxwitch              WITH ctxwitch
@@ -26,7 +28,7 @@ PM changes prompt in Jira     ->  PM opens Context PR
 Goes through eng sprint       ->  Eval gate runs automatically
 3-5 day delay                 ->  Problem caught before prod
 No semantic review            ->  Reviewer sees exact behavior diff
-No rollback                   ->  Canary deploy, instant rollback
+No rollback                   ->  Tagged versions, instant rollback
 Compliance audit fails        ->  Complete audit trail in 30 sec
 ```
 
@@ -82,19 +84,43 @@ witch log
 
 > **Alias:** You can also use `ctxw` instead of `witch` for all commands.
 
+## Use the governed context in your app
+
+Your agent loads its context from witch.yaml instead of hardcoding it — so
+behavior changes ship through Context PRs, not redeploys:
+
+```python
+from ctxwitch.runtime import load_components
+
+components = load_components(env="prod")  # or set CTXWITCH_ENV
+
+response = client.messages.create(
+    model=components["model"],
+    system=components["system_prompt"],
+    temperature=components["temperature"],
+    max_tokens=components["max_tokens"],
+    messages=[...],
+)
+```
+
+Environment overrides from the `environments:` block are deep-merged, so dev
+and prod diverge only where they say they do. Non-Python stacks: `witch spell
+export --format json` in your build step.
+
 ## CLI Reference
 
 ### Core Commands
 
 | Command | Description |
 |---------|-------------|
+| `witch tour` | Guided hands-on walkthrough in a disposable sandbox (start here) |
 | `witch init <name>` | Initialize a new ctxwitch project |
 | `witch status` | Show current context state |
-| `witch commit -m "msg"` | Commit context changes with version bump |
+| `witch commit -m "msg"` | Commit context changes with version bump + rollback tag |
 | `witch checkout [-b] <branch>` | Switch to or create a context branch |
-| `witch diff [--ref REF] [--judge]` | Show semantic diff with behavioral impact analysis |
+| `witch diff [--ref REF] [--judge]` | Behavioral diff vs last commit (or any ref), like `git diff` |
 | `witch log [-n COUNT]` | Show context change history |
-| `witch eval [--judge]` | Run eval gates on current context |
+| `witch eval [--judge] [--allow-breaking]` | Run the gate: metric thresholds + CBIA; Breaking changes block (exit 2) unless overridden |
 | `witch rollback <version>` | Rollback to a specific version |
 | `witch branches` | List all context branches |
 
@@ -189,38 +215,41 @@ eval:
 
 ## Architecture
 
-New to CBIA? See **[How CBIA Works (plain English)](docs/CBIA-explained.md)** — a beginner-friendly guide to the 6-tier pipeline and severity scorecard.
-
 ```
 ctxwitch/
   core/          # Context schema, model, diff engine, CBIA pipeline
-  cli/           # Click-based CLI (witch, inspect, spell commands)
+  cli/           # Click-based CLI (witch, tour, inspect, spell commands)
   engine/        # Git-backed store, PR workflow engine
-  eval/          # Pluggable eval gate framework
+  eval/          # Pluggable eval gate framework + live model runner
+  runtime.py     # Load governed context into your agent (env overrides)
   a2a/           # Agent-to-agent handover versioning (future)
+ccia-bench/      # Public benchmark: labeled context-change pairs + scorer
 examples/        # Sample witch.yaml and golden.jsonl
-tests/           # Test suite (96 tests)
+tests/           # Test suite (170 tests)
 ```
 
 ## What's Built
 
 - [x] Context YAML schema and validation
-- [x] Git-backed versioning engine
-- [x] CLI: init, commit, checkout, diff, log, status, rollback
-- [x] Context PR workflow (create, list, review)
-- [x] Eval gate framework with pluggable evaluators
+- [x] Git-backed versioning engine with rollback tags
+- [x] CLI: init, commit, checkout, diff, log, status, rollback + guided `witch tour`
+- [x] Context PR workflow (create, list, review, merge with Breaking-change gate)
+- [x] Eval gate framework: structural heuristics + live model eval (`eval.mode: live`)
 - [x] 6-tier CBIA behavioral semantic diff pipeline
 - [x] 12-dimension behavioral taxonomy with compound severity
-- [x] Directive contradiction detection
+- [x] Directive contradiction, numeric-threshold, and environment-override detection
+- [x] Typo/punctuation-robust negation detection (orthographic verdict stability)
 - [x] Confidence-gated LLM-as-judge (Tier 6)
-- [x] CI-ready exit codes (`witch diff --strict`)
-- [x] Inspect and Spell commands
+- [x] CI-ready exit codes (`witch diff --strict`, `witch eval`)
+- [x] Runtime API (`ctxwitch.runtime.load_components`)
+- [x] Public benchmark (`ccia-bench`: 55 labeled pairs)
 
 ## What's Next
 
 - Remote PR integration (GitHub, GitLab)
 - CI/CD templates
 - Multi-agent context versioning
+- Plain-English CBIA guide (docs/)
 - More to come — [follow the project](https://github.com/ctxwitch/ctxwitch) for updates
 
 ## Research
