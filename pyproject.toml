@@ -17,6 +17,7 @@ keywords = ["ai", "context", "versioning", "llm", "prompt-management", "a2a", "a
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "Topic :: Software Development :: Version Control",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",

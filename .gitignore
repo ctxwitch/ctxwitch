@@ -1,5 +1,11 @@
 # Private / local-only artifacts
 .private/
+witchhub/
+.claude/
+.Rhistory
+
+# witch tour sandboxes (created by `witch tour`)
+witch-tour/
 
 # ctxwitch instance files (created by `witch init`)
 witch.yaml

@@ -1,10 +1,24 @@
 # ctxwitch
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20741295.svg)](https://doi.org/10.5281/zenodo.20741295)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20741295-blue)](https://doi.org/10.5281/zenodo.20741295)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-170%20passing-brightgreen)](tests/)
 
 **Version control for AI agent behavior.** Git tells you what changed in your prompt — ctxwitch tells you what the change will *do*: semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails.
 
 ![witch tour demo — a prompt edit scored as a behavioral change across 12 dimensions](docs/demo.gif)
+
+## Try it in 3 minutes
+
+```bash
+pip install ctxwitch
+witch tour
+```
+
+The tour drops you into a disposable sandbox agent and walks you through the
+whole loop — behavioral diff, commit, branch, a Breaking change, a Context PR,
+and the eval gate that blocks it. Everything runs locally; no API key needed.
 
 ctxwitch is the reference implementation of [Context Change Impact Analysis (CCIA)](https://doi.org/10.5281/zenodo.20741295) — a discipline for predicting how changes to an AI agent's context configuration affect its observable behavior. The core engine, CBIA (Compound Behavioral Impact Analysis), is a 6-tier pipeline that scores any context change across 12 behavioral dimensions at 5 severity levels, deterministically, in under 100ms, without LLM inference.
 
@@ -32,26 +46,7 @@ No rollback                   ->  Tagged versions, instant rollback
 Compliance audit fails        ->  Complete audit trail in 30 sec
 ```
 
-## Install
-
-```bash
-pip install ctxwitch
-
-# or, for development
-pip install -e ".[dev]"
-```
-
-## Quick Start
-
-New here? The fastest way in is the guided tour — it creates a disposable
-sandbox agent and walks you through the whole loop (behavioral diff → commit →
-branch → breaking change → Context PR → eval gate) in about 3 minutes:
-
-```bash
-witch tour
-```
-
-Or do it manually:
+## The manual workflow
 
 ```bash
 # Initialize a project
@@ -252,6 +247,14 @@ tests/           # Test suite (170 tests)
 - Plain-English CBIA guide (docs/)
 - More to come — [follow the project](https://github.com/ctxwitch/ctxwitch) for updates
 
+## Community
+
+- **Questions & ideas** → [GitHub Discussions](https://github.com/ctxwitch/ctxwitch/discussions)
+- **Bugs & misclassifications** → [Issues](https://github.com/ctxwitch/ctxwitch/issues) — CBIA misses are gold; they become benchmark pairs
+- **Contributing** → [CONTRIBUTING.md](CONTRIBUTING.md) — new `ccia-bench` pairs are the most valuable first PR
+
+If ctxwitch is useful to you, a ⭐ helps other agent builders find it.
+
 ## Research
 
 This tool implements the framework described in:
@@ -260,4 +263,4 @@ This tool implements the framework described in:
 
 ## License
 
-Business Source License 1.1 -- see [LICENSE](LICENSE) for details.
+Apache License 2.0 -- see [LICENSE](LICENSE) for details.
