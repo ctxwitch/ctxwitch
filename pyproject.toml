@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ctxwitch"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Version control for AI agent behavior. Semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -43,6 +43,9 @@ dev = [
 [project.scripts]
 witch = "ctxwitch.cli.main:cli"
 ctxw = "ctxwitch.cli.main:cli"
+
+[tool.setuptools.dynamic]
+version = {attr = "ctxwitch.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["ctxwitch*"]
