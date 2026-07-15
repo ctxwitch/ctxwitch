@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ctxwitch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Version control for AI agent behavior. Semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails."
 readme = "README.md"
 license = {file = "LICENSE"}
