@@ -1,7 +1,4 @@
-# Private / local-only artifacts
-.private/
-witchhub/
-.claude/
+# Local editor/tool artifacts
 .Rhistory
 
 # witch tour sandboxes (created by `witch tour`)
