@@ -37,7 +37,9 @@ def tmp_project(tmp_path):
 def test_version(runner):
     result = runner.invoke(cli, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    from ctxwitch import __version__
+
+    assert __version__ in result.output
 
 
 def test_init(runner, tmp_project):
