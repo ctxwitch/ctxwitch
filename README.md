@@ -261,6 +261,8 @@ This tool implements the framework described in:
 
 > Kulkarni, A. A. (2026). *Context Change Impact Analysis: A Framework for Governing AI Agent Behavior Through Structured Context Versioning.* Zenodo. [https://doi.org/10.5281/zenodo.20741295](https://doi.org/10.5281/zenodo.20741295)
 
+Also available on SSRN: [https://doi.org/10.2139/ssrn.7011398](https://doi.org/10.2139/ssrn.7011398)
+
 ## License
 
 Apache License 2.0 -- see [LICENSE](LICENSE) for details.
