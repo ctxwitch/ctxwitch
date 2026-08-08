@@ -79,6 +79,40 @@ witch log
 
 > **Alias:** You can also use `ctxw` instead of `witch` for all commands.
 
+## No rewrite required: scan your existing agent code
+
+Already have an agent built with Google ADK, LangGraph, or the raw
+Anthropic/OpenAI SDK? You don't have to move anything into witch.yaml to get a
+behavioral diff. `witch scan` reads the **behavioral surface** — system prompt,
+model, temperature, tools, guardrails — straight out of your Python and runs
+CBIA on it.
+
+```bash
+# Show what ctxwitch extracts from your agent (no code changes)
+witch scan agent.py
+
+# Score the behavioral impact of your uncommitted changes vs a git revision
+witch scan agent.py --diff HEAD~1     # exit code 2 if the change is Breaking
+```
+
+The scan is **static** — it reads your code, it never imports or runs it, so
+it's safe in CI on untrusted PRs. It follows prompt values assigned to module
+constants, pulls each tool's description from its function docstring, and — this
+is the important part — is **honest about what it can't resolve**. If a prompt is
+built at runtime (an f-string, or loaded from witch.yaml), scan marks that field
+`unresolved` rather than guessing, so a green result never hides a change it
+simply couldn't see.
+
+That gives you two clean ways in, for two stages of adoption:
+
+| Where your prompt/config values live | Diff with | Get |
+|---|---|---|
+| In your **agent code** (inline or constants) | `witch scan --diff` | Zero-rewrite CBIA on your existing repo |
+| In **witch.yaml** (code references it) | `witch diff` | Full governance: environments, PRs, rollback |
+
+Start by scanning your code today; graduate to witch.yaml when you want the full
+review workflow below.
+
 ## Use the governed context in your app
 
 Your agent loads its context from witch.yaml instead of hardcoding it — so
@@ -109,6 +143,7 @@ export --format json` in your build step.
 | Command | Description |
 |---------|-------------|
 | `witch tour` | Guided hands-on walkthrough in a disposable sandbox (start here) |
+| `witch scan <file> [--diff REF] [--framework adk\|generic]` | Extract the behavioral surface from existing agent code and run CBIA — no witch.yaml required |
 | `witch init <name>` | Initialize a new ctxwitch project |
 | `witch status` | Show current context state |
 | `witch commit -m "msg"` | Commit context changes with version bump + rollback tag |
@@ -237,10 +272,12 @@ tests/           # Test suite (170 tests)
 - [x] Confidence-gated LLM-as-judge (Tier 6)
 - [x] CI-ready exit codes (`witch diff --strict`, `witch eval`)
 - [x] Runtime API (`ctxwitch.runtime.load_components`)
-- [x] Public benchmark (`ccia-bench`: 55 labeled pairs)
+- [x] Code extraction (`witch scan`): CBIA on existing ADK / raw-SDK agents, no witch.yaml required
+- [x] Public benchmark (`ccia-bench`: 58 labeled pairs)
 
 ## What's Next
 
+- More framework adapters for `witch scan` (LangGraph, CrewAI)
 - Remote PR integration (GitHub, GitLab)
 - CI/CD templates
 - Multi-agent context versioning

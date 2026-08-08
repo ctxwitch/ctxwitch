@@ -1030,6 +1030,143 @@ def branches():
         sys.exit(1)
 
 
+def _render_cbia_report(report):
+    """Compact CBIA scorecard used by `scan --diff` (shared style w/ diff)."""
+    from ctxwitch.core.dimensions import Dimension
+
+    styles = {
+        Severity.NO_CHANGE: "dim",
+        Severity.COSMETIC: "dim",
+        Severity.MINOR: "yellow",
+        Severity.SIGNIFICANT: "bold yellow",
+        Severity.BREAKING: "bold red",
+    }
+    cstyle = styles.get(report.compound_severity, "white")
+    console.print()
+    console.print(
+        Panel(
+            f"[{cstyle}]{report.compound_severity.label}[/{cstyle}]\n[dim]{report.summary}[/]",
+            title="Behavioral Impact (CBIA)",
+            border_style=cstyle.replace("bold ", ""),
+        )
+    )
+    table = Table(title="Dimension Scorecard", box=box.ROUNDED)
+    table.add_column("Dimension", style="bold")
+    table.add_column("Severity")
+    table.add_column("Reason")
+    for imp in sorted(report.impacts, key=lambda i: -i.severity.value):
+        if imp.severity.value <= 0:
+            continue
+        table.add_row(
+            imp.dimension.value,
+            f"[{styles.get(imp.severity, 'white')}]{imp.severity.label}[/]",
+            (imp.reason or "")[:70],
+        )
+    if table.row_count:
+        console.print(table)
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--framework", "-f", default=None,
+              help="Force an adapter (adk, generic). Default: try all.")
+@click.option("--agent", "-a", default=None,
+              help="Select one agent by name/symbol when a file has several.")
+@click.option("--diff", "ref", default=None, metavar="GIT_REF",
+              help="Run CBIA between this git ref and the working tree.")
+@click.option("--json", "as_json", is_flag=True, help="Emit snapshot(s) as JSON.")
+@click.option("--judge", is_flag=True, help="Enable Tier-6 LLM judge (needs API key).")
+def scan(path, framework, agent, ref, as_json, judge):
+    """Extract the behavioral surface from agent CODE (ADK, LangGraph, raw SDK).
+
+    Point ctxwitch at a Python agent instead of a witch.yaml:
+
+        witch scan agent.py                 # show extracted snapshot
+        witch scan agent.py --diff HEAD~1   # CBIA vs a previous git revision
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    from ctxwitch.extract import extract_snapshots
+    from ctxwitch.extract.extractor import diff_code
+
+    p = _Path(path)
+    new_source = p.read_text(encoding="utf-8")
+
+    # ── --diff mode: this is how you "point at your own code + git diff" ──
+    if ref is not None:
+        old_source = _git_show(p, ref)
+        if old_source is None:
+            console.print(f"[red]Could not read {path} at {ref}[/]")
+            sys.exit(1)
+        report, old_snap, new_snap = diff_code(
+            old_source, new_source, source_file=str(p),
+            framework=framework, agent=agent, use_judge=judge,
+        )
+        if old_snap is None and new_snap is None:
+            console.print("[yellow]No agent found in either revision.[/]")
+            sys.exit(0)
+        for label, snap in (("was", old_snap), ("now", new_snap)):
+            if snap and snap.dynamic_fields:
+                console.print(
+                    f"[yellow]![/] unresolved in {label}: "
+                    f"{', '.join(snap.dynamic_fields)} "
+                    f"[dim](dynamic — not statically analyzable)[/]"
+                )
+        _render_cbia_report(report)
+        # exit code mirrors severity so scan is CI-usable
+        sys.exit(2 if report.compound_severity >= Severity.BREAKING else 0)
+
+    # ── plain scan: show what we extracted ───────────────────────────────
+    snaps = extract_snapshots(new_source, source_file=str(p), framework=framework)
+    if agent:
+        snaps = [s for s in snaps if agent in (s.name, s.agent_symbol)]
+    if not snaps:
+        console.print("[yellow]No agent found. "
+                      "Try --framework adk|generic, or check the file.[/]")
+        sys.exit(0)
+
+    if as_json:
+        console.print(_json.dumps([s.to_context_dict() for s in snaps], indent=2))
+        return
+
+    for snap in snaps:
+        comp = snap.to_context_dict()["components"]
+        body = [
+            f"[bold]model[/]        {comp.get('model') or '[dim]?[/]'}",
+            f"[bold]temperature[/]  {comp.get('temperature', '[dim]—[/]')}",
+            f"[bold]tools[/]        {', '.join(t['name'] for t in comp.get('tool_definitions', [])) or '[dim]none[/]'}",
+            f"[bold]prompt[/]       {(snap.system_prompt[:80] + '…') if len(snap.system_prompt) > 80 else (snap.system_prompt or '[dim]—[/]')}",
+        ]
+        if snap.dynamic_fields:
+            body.append(f"[yellow]unresolved[/]   {', '.join(snap.dynamic_fields)}")
+        console.print(Panel(
+            "\n".join(body),
+            title=f"{snap.name}  [dim]({snap.source_framework} · {p.name}:{snap.source_line})[/]",
+            border_style="cyan",
+        ))
+
+
+def _git_show(path, ref: str):
+    """Return the file's contents at a git ref, or None."""
+    import subprocess
+    from pathlib import Path as _Path
+
+    p = _Path(path)
+    try:
+        rel = p.resolve().relative_to(_Path.cwd().resolve())
+    except ValueError:
+        rel = p
+    try:
+        out = subprocess.run(
+            ["git", "show", f"{ref}:{rel.as_posix()}"],
+            capture_output=True, text=True, check=True,
+        )
+        return out.stdout
+    except Exception:
+        return None
+
+
 from ctxwitch.cli.tour import tour  # noqa: E402
 
 cli.add_command(tour)

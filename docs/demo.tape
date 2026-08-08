@@ -52,3 +52,16 @@ Sleep 6s
 Type "witch eval"
 Enter
 Sleep 5.5s
+
+# ── No rewrite required: score behavior straight out of agent code ──
+Hide
+Type "clear && printf 'from google.adk.agents import LlmAgent\ndef escalate(case_id):\n    \"Escalate to a human.\"\n    ...\nagent = LlmAgent(name=\"support\", model=\"gemini-2.0-flash\", instruction=\"You are Aria. Escalate refunds over $100.\", temperature=0.3, tools=[escalate])\n' > agent.py"
+Enter
+Sleep 400ms
+Show
+
+Type "# already have an ADK agent? scan it — no witch.yaml needed"
+Enter
+Type "witch scan agent.py"
+Enter
+Sleep 5s
