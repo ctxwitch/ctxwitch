@@ -13,7 +13,7 @@ Set Padding 12
 
 # Work in a scratch dir so the repo stays clean
 Hide
-Type "export PATH=$HOME/Library/Python/3.9/bin:$PATH && cd $(mktemp -d) && clear"
+Type "export PATH=$HOME/Library/Python/3.9/bin:$PATH && export REPO=$PWD && cd $(mktemp -d) && clear"
 Enter
 Sleep 500ms
 Show
@@ -55,12 +55,12 @@ Sleep 5.5s
 
 # ── No rewrite required: score behavior straight out of agent code ──
 Hide
-Type "clear && printf 'from google.adk.agents import LlmAgent\ndef escalate(case_id):\n    \"Escalate to a human.\"\n    ...\nagent = LlmAgent(name=\"support\", model=\"gemini-2.0-flash\", instruction=\"You are Aria. Escalate refunds over $100.\", temperature=0.3, tools=[escalate])\n' > agent.py"
+Type "clear && cp $REPO/docs/demo_agent.py agent.py"
 Enter
 Sleep 400ms
 Show
 
-Type "# already have an ADK agent? scan it — no witch.yaml needed"
+Type "# already have an ADK agent? scan it, no witch.yaml needed"
 Enter
 Type "witch scan agent.py"
 Enter
