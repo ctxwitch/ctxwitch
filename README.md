@@ -113,6 +113,54 @@ That gives you two clean ways in, for two stages of adoption:
 Start by scanning your code today; graduate to witch.yaml when you want the full
 review workflow below.
 
+## Behavioral scans on every PR (GitHub Action)
+
+Add ctxwitch to CI and every pull request gets a behavioral-impact comment — the
+severity of each change, the dimension it affects, and whether it should block.
+Copy [docs/examples/behavioral-scan.yml](docs/examples/behavioral-scan.yml) into
+`.github/workflows/` in your repo:
+
+```yaml
+name: Agent behavioral scan
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  ctxwitch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # required: gives the action the PR base to diff
+      - uses: ctxwitch/ctxwitch@v0
+        with:
+          fail-on: breaking     # breaking | significant | minor | never
+```
+
+The PR comment looks like:
+
+> **5 behavioral changes detected** across 2 scanned files.
+>
+> | Severity | Change | Dimension | Recommended |
+> |---|---|---|---|
+> | 🔴 Breaking | Constraints removed: Never give investment advice. | Constraints | requires human / security review |
+> | 🟠 Significant | Escalation rule reversed: must escalate → may approve | Constraints | run evaluation suite / agent replay |
+> | 🟢 Cosmetic | tone wording changed | Tone | no additional testing |
+>
+> **Policy result:** ❌ merge blocked (Breaking change)
+
+**It runs entirely in your CI.** The scan uses your own git history and your own
+`GITHUB_TOKEN` to post the comment — ctxwitch sends **no telemetry**, needs no
+account, and nothing (no prompts, no code) ever leaves your infrastructure.
+
+Prefer to wire it into your own pipeline? `witch ci` is the underlying command:
+
+```bash
+witch ci --base origin/main --fail-on breaking      # exits 2 if blocked
+witch ci --base origin/main --format json           # machine-readable
+```
+
 ## Use the governed context in your app
 
 Your agent loads its context from witch.yaml instead of hardcoding it — so
@@ -144,6 +192,7 @@ export --format json` in your build step.
 |---------|-------------|
 | `witch tour` | Guided hands-on walkthrough in a disposable sandbox (start here) |
 | `witch scan <file> [--diff REF] [--framework adk\|generic]` | Extract the behavioral surface from existing agent code and run CBIA — no witch.yaml required |
+| `witch ci --base REF [--fail-on breaking\|significant\|minor\|never]` | Scan a PR's changed files (code + witch.yaml), emit a report, exit 2 when blocked — powers the GitHub Action |
 | `witch init <name>` | Initialize a new ctxwitch project |
 | `witch status` | Show current context state |
 | `witch commit -m "msg"` | Commit context changes with version bump + rollback tag |
@@ -273,6 +322,7 @@ tests/           # Test suite (170 tests)
 - [x] CI-ready exit codes (`witch diff --strict`, `witch eval`)
 - [x] Runtime API (`ctxwitch.runtime.load_components`)
 - [x] Code extraction (`witch scan`): CBIA on existing ADK / raw-SDK agents, no witch.yaml required
+- [x] GitHub Action (`witch ci`): behavioral-impact comment on every PR, runs in your CI, zero telemetry
 - [x] Public benchmark (`ccia-bench`: 58 labeled pairs)
 
 ## What's Next

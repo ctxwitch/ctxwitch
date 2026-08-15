@@ -1,0 +1,81 @@
+name: "ctxwitch behavioral scan"
+description: "Scan a PR for behavioral changes to your AI agents (CBIA). Runs entirely in your CI — no telemetry, no account, nothing leaves your infrastructure."
+author: "ctxwitch"
+branding:
+  icon: "eye"
+  color: "purple"
+
+inputs:
+  fail-on:
+    description: "Severity at/above which the check fails the build: breaking | significant | minor | never"
+    required: false
+    default: "breaking"
+  framework:
+    description: "Force an extractor adapter for agent code (adk, generic). Default: auto-detect."
+    required: false
+    default: ""
+  comment:
+    description: "Post/update a PR comment with the scan report (true/false)."
+    required: false
+    default: "true"
+  ctxwitch-version:
+    description: "Version of ctxwitch to install from PyPI (default: latest)."
+    required: false
+    default: ""
+  python-version:
+    description: "Python version to run ctxwitch under."
+    required: false
+    default: "3.11"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install ctxwitch
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.ctxwitch-version }}" ]; then
+          pip install "ctxwitch==${{ inputs.ctxwitch-version }}"
+        else
+          pip install ctxwitch
+        fi
+
+    - name: Run behavioral scan
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        BASE="${{ github.event.pull_request.base.sha }}"
+        if [ -z "$BASE" ]; then BASE="HEAD~1"; fi
+        FW=""
+        if [ -n "${{ inputs.framework }}" ]; then FW="--framework ${{ inputs.framework }}"; fi
+        witch ci --base "$BASE" --fail-on "${{ inputs.fail-on }}" $FW \
+          --format markdown --output ctxwitch-comment.md
+        echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+        cat ctxwitch-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Post or update PR comment
+      if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const marker = '<!-- ctxwitch-scan -->';
+          const body = marker + '\n' + fs.readFileSync('ctxwitch-comment.md', 'utf8');
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+          const existing = comments.find(c => c.body && c.body.includes(marker));
+          if (existing) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - name: Enforce policy
+      shell: bash
+      run: exit ${{ steps.scan.outputs.exit_code }}

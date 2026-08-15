@@ -1167,6 +1167,46 @@ def _git_show(path, ref: str):
         return None
 
 
+@cli.command()
+@click.option("--base", required=True, help="Base git ref to compare against (e.g. the PR base SHA).")
+@click.option("--head", default=None, help="Head git ref (default: working tree / HEAD).")
+@click.option("--fail-on", type=click.Choice(["breaking", "significant", "minor", "never"]),
+              default="breaking", help="Severity at/above which the check fails (exit 2).")
+@click.option("--framework", default=None, help="Force an extractor adapter (adk, generic).")
+@click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
+@click.option("--output", "out_path", default=None, help="Write the report to this file instead of stdout.")
+def ci(base, head, fail_on, framework, fmt, out_path):
+    """Scan a PR's changed files with CBIA and emit a report (for CI / the Action).
+
+    Runs entirely on local git history — no network, no telemetry. Exits 2 when
+    the aggregated change is at/above --fail-on, so it can gate a merge.
+
+        witch ci --base origin/main --fail-on breaking
+    """
+    import json as _json
+
+    from ctxwitch.ci import run_ci
+    from ctxwitch.core.dimensions import Severity
+
+    report = run_ci(base=base, head=head, framework=framework, fail_on=fail_on)
+
+    if fmt == "json":
+        rendered = _json.dumps(report.to_dict(), indent=2)
+    else:
+        rendered = report.to_markdown(version=__version__)
+
+    if out_path:
+        Path(out_path).write_text(rendered, encoding="utf-8")
+        console.print(f"[dim]wrote {out_path}[/] "
+                      f"({report.compound_severity.label}, "
+                      f"{'blocked' if report.blocked else 'passed'})")
+    else:
+        # plain print so the markdown is clean for piping into a PR comment
+        print(rendered)
+
+    sys.exit(2 if report.blocked else 0)
+
+
 from ctxwitch.cli.tour import tour  # noqa: E402
 
 cli.add_command(tour)

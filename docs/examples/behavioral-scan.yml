@@ -1,0 +1,28 @@
+# Copy this into YOUR repo at .github/workflows/behavioral-scan.yml
+# It runs ctxwitch on every pull request and posts a behavioral-impact comment.
+#
+# Nothing leaves your CI: the scan runs on your own git history using your own
+# GITHUB_TOKEN. ctxwitch sends no telemetry and needs no account.
+
+name: Agent behavioral scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read        # read the diff
+  pull-requests: write  # post the comment
+
+jobs:
+  ctxwitch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # REQUIRED: gives the action the PR base to diff against
+
+      - uses: ctxwitch/ctxwitch@v0
+        with:
+          fail-on: breaking          # breaking | significant | minor | never
+          # framework: adk           # optional: force an adapter for agent code
+          # comment: 'true'          # post/update a PR comment (default true)
