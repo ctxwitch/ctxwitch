@@ -1,6 +1,5 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/hat_icon.png" width="96" alt="ctxwitch" /><br/>
-  ctxwitch
+  <img src="https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/ctxwitch-wordmark.png" width="440" alt="ctxwitch" />
 </h1>
 
 <p align="center"><b>Scan AI agent changes for behavioral risk</b></p>
