@@ -1,11 +1,22 @@
-# ctxwitch
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/hat_icon.png" width="96" alt="ctxwitch" /><br/>
+  ctxwitch
+</h1>
 
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20741295-blue)](https://doi.org/10.5281/zenodo.20741295)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-170%20passing-brightgreen)](tests/)
+<p align="center"><b>Scan AI agent changes for behavioral risk</b></p>
 
-**Version control for AI agent behavior.** Git tells you what changed in your prompt — ctxwitch tells you what the change will *do*: semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails.
+<p align="center">
+<a href="https://doi.org/10.5281/zenodo.20741295"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20741295-blue" alt="DOI" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="License" /></a>
+<a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python" /></a>
+<a href="tests/"><img src="https://img.shields.io/badge/tests-184%20passing-brightgreen" alt="Tests" /></a>
+</p>
+
+ctxwitch analyzes changes to your agent's prompts, models, tools, RAG, memory, and guardrails — before they ship — and classifies the behavioral risk of each change. Git tells you *what changed*; ctxwitch tells you what the change will *do*.
+
+Remove a guardrail or reverse a rule and it flags the change **Breaking** and tells your CI a deeper eval or human review is warranted — while cosmetic edits pass clean.
+
+Runs locally or as a GitHub Action, in ~100ms, deterministically — no agent execution, no traces, no LLM required. *(An optional LLM judge handles the subjective cases.)*
 
 ![witch tour demo — a prompt edit scored as a behavioral change across 12 dimensions](https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/demo.gif)
 

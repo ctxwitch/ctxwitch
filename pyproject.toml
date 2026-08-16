@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ctxwitch"
 dynamic = ["version"]
-description = "Version control for AI agent behavior. Semantic diffs across 12 behavioral dimensions, eval gates, and Context PRs for prompts, RAG configs, tool definitions, and guardrails."
+description = "Behavioral risk analysis for AI agent changes. Scan changes to prompts, models, tools, RAG, memory, and guardrails; classify behavioral risk and gate CI before deployment."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
