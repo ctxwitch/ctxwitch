@@ -34,60 +34,24 @@ ctxwitch is the reference implementation of [Context Change Impact Analysis (CCI
 
 ## The Problem
 
-AI app behavior is controlled by context -- prompts, RAG configs, tool definitions -- that changes frequently and needs input from engineers, PMs, domain experts, and compliance teams. Today this falls into one of two broken patterns:
+AI agent behavior is no longer defined by code alone. Prompts, model settings, tool definitions, RAG, memory, and guardrails all change how an agent behaves -- and those changes are increasingly made not just by engineers, but by product managers, domain experts, and security/compliance stakeholders.
 
-1. **Locked in code** (the ADK/LangChain pattern): only engineers can touch it. PMs file Jira tickets and wait 3-5 days for a prompt change.
-2. **Scattered in tools** with no team workflow, no eval-gating, and no deployment governance.
+Teams can already *version* and *test* these changes. What they lack is a fast, consistent way to understand the **behavioral risk** of a change *before* deciding how much testing or review it needs.
 
-Neither pattern supports safe, collaborative, multi-stakeholder contribution to a production AI system.
+Today a one-word prompt tweak and a removed guardrail flow through the same pipeline -- even though their consequences are radically different. So teams over-test everything, under-test the risky changes, or fall back on manual judgment about what deserves a deeper look.
 
 ## The Solution
 
-ctxwitch treats AI context like code -- but better. Every change goes through a **Context PR** with semantic diffs, automated eval gates, review workflows, and one-command rollback.
+ctxwitch adds a **behavioral-risk analysis layer** before evaluation and deployment. It analyzes each change to an agent's context, classifies which behavioral dimensions are affected and how severely, and routes higher-risk changes to deeper testing or human review -- while low-risk edits pass straight through.
 
 ```
-WITHOUT ctxwitch              WITH ctxwitch
+WITHOUT ctxwitch                 WITH ctxwitch
 -------------------------------  --------------------------------
-PM changes prompt in Jira     ->  PM opens Context PR
-Goes through eng sprint       ->  Eval gate runs automatically
-3-5 day delay                 ->  Problem caught before prod
-No semantic review            ->  Reviewer sees exact behavior diff
-No rollback                   ->  Tagged versions, instant rollback
-Compliance audit fails        ->  Complete audit trail in 30 sec
+Every change tested the same  ->  Risk scored first; testing scaled to it
+A prompt tweak == a guardrail ->  Severity + dimensions classified per change
+Risky edits slip through      ->  Higher-risk changes routed to review
+No semantic review            ->  The right reviewer sees the exact behavior diff
 ```
-
-## The manual workflow
-
-```bash
-# Initialize a project
-witch init my-support-agent
-
-# Edit witch.yaml with your AI config, then commit
-witch commit -m "configure support agent prompt"
-
-# Create a branch for changes
-witch checkout -b refund-policy-update
-
-# Edit witch.yaml...
-witch commit -m "tighten refund approval per CEO feedback"
-
-# Create a Context PR
-witch pr create -t "Tighten refund approval policy"
-
-# Run eval gate
-witch eval
-
-# View the semantic diff with behavioral impact analysis
-witch diff --ref main
-
-# Enable LLM-as-judge for deeper subjective analysis
-witch diff --ref main --judge
-
-# View history
-witch log
-```
-
-> **Alias:** You can also use `ctxw` instead of `witch` for all commands.
 
 ## No rewrite required: scan your existing agent code
 
@@ -140,7 +104,7 @@ jobs:
   ctxwitch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0        # required: gives the action the PR base to diff
       - uses: ctxwitch/ctxwitch@v0
@@ -170,6 +134,57 @@ Prefer to wire it into your own pipeline? `witch ci` is the underlying command:
 witch ci --base origin/main --fail-on breaking      # exits 2 if blocked
 witch ci --base origin/main --format json           # machine-readable
 ```
+
+## A shared language for cross-functional changes
+
+Agent behavior is increasingly a cross-functional artifact -- engineers, product managers, domain experts, and risk/compliance teams all have legitimate reasons to change or review it. But they don't share a common language for *what a change does*.
+
+ctxwitch's 12 behavioral dimensions give them one. Different roles tend to move different dimensions:
+
+| A change from… | tends to affect… |
+|---|---|
+| **Product** | Task Scope — what the agent will and won't handle |
+| **Security** | Safety — what it must refuse or escalate |
+| **Domain expert** | Knowledge Scope — what it knows and asserts |
+| **Engineering** | Tools & Autonomy — what it can do on its own |
+| **Compliance** | Constraints — what it must disclose or withhold |
+
+Instead of "someone edited the prompt," everyone sees the same thing: *which dimensions moved, and how much.* That shared representation is what lets a change reach the right reviewer — and what a governance layer can build on. Increasingly, an organization's domain expertise lives in an agent's prompts and guardrails, not its code; ctxwitch keeps that growing behavioral footprint legible and safe to change.
+
+## The manual workflow
+
+Once you want the full review loop, move your agent's context into a `witch.yaml` and manage it like code:
+
+```bash
+# Initialize a project
+witch init my-support-agent
+
+# Edit witch.yaml with your AI config, then commit
+witch commit -m "configure support agent prompt"
+
+# Create a branch for changes
+witch checkout -b refund-policy-update
+
+# Edit witch.yaml...
+witch commit -m "tighten refund approval per CEO feedback"
+
+# Create a Context PR
+witch pr create -t "Tighten refund approval policy"
+
+# Run eval gate
+witch eval
+
+# View the semantic diff with behavioral impact analysis
+witch diff --ref main
+
+# Enable LLM-as-judge for deeper subjective analysis
+witch diff --ref main --judge
+
+# View history
+witch log
+```
+
+> **Alias:** You can also use `ctxw` instead of `witch` for all commands.
 
 ## Use the governed context in your app
 
@@ -314,7 +329,7 @@ ctxwitch/
   a2a/           # Agent-to-agent handover versioning (future)
 ccia-bench/      # Public benchmark: labeled context-change pairs + scorer
 examples/        # Sample witch.yaml and golden.jsonl
-tests/           # Test suite (170 tests)
+tests/           # Test suite (184 tests)
 ```
 
 ## What's Built

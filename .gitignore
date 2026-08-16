@@ -6,6 +6,8 @@ witch-tour/
 
 # ctxwitch instance files (created by `witch init`)
 witch.yaml
+# but keep the committed reference example:
+!examples/witch.yaml
 .ctxwitch/
 evals/
 

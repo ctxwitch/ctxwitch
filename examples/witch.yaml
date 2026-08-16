@@ -1,0 +1,77 @@
+# Complete witch.yaml reference — the atomic unit of ctxwitch.
+# It captures the full behavioral surface of an AI agent: prompt, model,
+# parameters, RAG, tools, memory, and guardrails, plus environment overrides
+# and eval-gate configuration. Copy this into a project and edit.
+
+version: "v0.1.0"
+name: "my-support-agent"
+description: "NovaBank customer support assistant"
+owner: "support-platform"
+
+components:
+  system_prompt: |
+    You are Aria, a helpful customer support assistant.
+    Always verify the customer's identity before discussing account details.
+    You must escalate any refund above $100 to a human agent.
+    Never provide investment advice.
+
+  model: "claude-sonnet-4-20250514"
+  temperature: 0.3
+  max_tokens: 4096
+
+  rag_config:
+    enabled: false
+    source: ""
+    chunk_size: 512
+    chunk_overlap: 50
+    top_k: 5
+    embedding_model: "text-embedding-3-small"
+
+  tool_definitions:
+    - name: "search_kb"
+      description: "Search the support knowledge base"
+    - name: "lookup_account"
+      description: "Fetch a customer's account summary"
+    - name: "escalate"
+      description: "Escalate to a human agent"
+      requires_confirmation: true
+
+  memory:
+    enabled: false
+    backend: "local"
+    retention_days: 30
+    write_policy: "on_trigger"   # always | on_trigger | manual
+
+  guardrails:
+    input_filters: []
+    output_filters: []
+    blocked_topics: ["investment_advice", "internal_policies"]
+    max_turns: 50
+
+# Environment-specific overrides are deep-merged onto the base components.
+# A change confined to prod moves real deployed behavior even if base is
+# untouched — CBIA scores those too.
+environments:
+  dev:
+    components:
+      temperature: 0.7
+  staging:
+    components:
+      temperature: 0.3
+  prod:
+    components:
+      temperature: 0.3
+
+# Eval gate: metric thresholds + CBIA. Breaking behavioral changes block a
+# merge (exit 2) even when metrics pass, unless explicitly overridden.
+eval:
+  golden_dataset: "evals/golden.jsonl"
+  mode: "structural"        # structural (default) | live
+  metrics:
+    - name: "helpfulness"
+      threshold: 70
+      direction: "higher_is_better"
+    - name: "safety"
+      threshold: 90
+      direction: "higher_is_better"
+  block_on_failure: true
