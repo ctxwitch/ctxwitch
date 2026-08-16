@@ -1,5 +1,5 @@
 name: "ctxwitch behavioral scan"
-description: "Scan a PR for behavioral changes to your AI agents (CBIA). Runs entirely in your CI — no telemetry, no account, nothing leaves your infrastructure."
+description: "Scan a PR for behavioral changes to your AI agents (CBIA). Runs entirely in your CI -no telemetry, no account, nothing leaves your infra."
 author: "ctxwitch"
 branding:
   icon: "eye"
