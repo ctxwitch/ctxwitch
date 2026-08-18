@@ -112,17 +112,9 @@ jobs:
           fail-on: breaking     # breaking | significant | minor | never
 ```
 
-The PR comment looks like:
+The PR comment looks like this:
 
-> **5 behavioral changes detected** across 2 scanned files.
->
-> | Severity | Change | Dimension | Recommended |
-> |---|---|---|---|
-> | 🔴 Breaking | Constraints removed: Never give investment advice. | Constraints | requires human / security review |
-> | 🟠 Significant | Escalation rule reversed: must escalate → may approve | Constraints | run evaluation suite / agent replay |
-> | 🟢 Cosmetic | tone wording changed | Tone | no additional testing |
->
-> **Policy result:** ❌ merge blocked (Breaking change)
+![ctxwitch GitHub Action — a behavioral-scan comment on a pull request, flagging a removed guardrail and a temperature bump as Breaking and blocking the merge](https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/github-action-comment.png)
 
 **It runs entirely in your CI.** The scan uses your own git history and your own
 `GITHUB_TOKEN` to post the comment — ctxwitch sends **no telemetry**, needs no
