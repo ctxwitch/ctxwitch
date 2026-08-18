@@ -13,55 +13,33 @@ Set Padding 12
 
 # Work in a scratch dir so the repo stays clean
 Hide
-Type "export PATH=$HOME/Library/Python/3.9/bin:$PATH && export REPO=$PWD && cd $(mktemp -d) && clear"
+Type "export PATH=$HOME/Library/Python/3.9/bin:$PATH && cd $(mktemp -d) && clear"
 Enter
 Sleep 500ms
 Show
 
+# Start the tour — it offers two ways in (scan an existing agent, or witch.yaml)
 Type "witch tour"
 Enter
-Sleep 3.5s
+Sleep 4s
 
 Type "cd witch-tour"
 Enter
 Sleep 800ms
 
-# Let the tour make the risky edit for us
-Type "witch tour --do"
-Enter
-Sleep 2s
-
-# The wow moment: behavioral scorecard, not a text diff
-Type "witch diff"
-Enter
-Sleep 6s
-
-# Commit, branch, remove a guardrail — the Breaking verdict
-Hide
-Type "witch commit -m 'raise refund autonomy' && witch checkout -b risky-change && witch tour --do && clear"
-Enter
-Sleep 3s
-Show
-
-Type "# now remove a safety guardrail and check again..."
-Enter
-Type "witch diff"
-Enter
-Sleep 6s
-
-Type "witch eval"
-Enter
-Sleep 5.5s
-
-# ── No rewrite required: score behavior straight out of agent code ──
-Hide
-Type "clear && cp $REPO/docs/demo_agent.py agent.py"
-Enter
-Sleep 400ms
-Show
-
-Type "# already have an ADK agent? scan it, no witch.yaml needed"
+# Path A — scan an existing agent, no rewrite required
+Type "# already have an agent? scan it — no rewrite, no witch.yaml"
 Enter
 Type "witch scan agent.py"
 Enter
-Sleep 5s
+Sleep 4.5s
+
+# Make a sample change: drop the investment-advice guardrail (the tour does it)
+Type "witch tour --edit-agent"
+Enter
+Sleep 2s
+
+# The payoff: a behavioral scorecard straight from the code diff — Breaking.
+Type "witch scan agent.py --diff HEAD"
+Enter
+Sleep 6.5s

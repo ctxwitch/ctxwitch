@@ -31,9 +31,14 @@ def _enter_sandbox(workdir):
 def test_tour_creates_sandbox(runner, workdir):
     result = runner.invoke(cli, ["tour"])
     assert result.exit_code == 0
-    assert "step 1" in result.output.lower()
+    # first run shows the two-path chooser (scan vs. govern), not step 1
+    out = result.output.lower()
+    assert "pick a path" in out
+    assert "scan agent code" in out
+    assert "govern with witch.yaml" in out
     sandbox = workdir / SANDBOX_NAME
     assert (sandbox / "witch.yaml").exists()
+    assert (sandbox / "agent.py").exists()  # for the Path A scan demo
     assert (sandbox / ".ctxwitch" / "tour.yaml").exists()
     assert (sandbox / "evals" / "golden.jsonl").exists()
     # sandbox is its own committed git repo
@@ -41,6 +46,23 @@ def test_tour_creates_sandbox(runner, workdir):
         ["git", "log", "--oneline"], cwd=sandbox, capture_output=True, text=True
     )
     assert "witch tour" in log.stdout
+
+
+def test_tour_edit_agent_weakens_agent_py(runner, workdir):
+    import ast
+    from ctxwitch.cli.tour import AGENT_GUARDRAIL
+
+    runner.invoke(cli, ["tour"])
+    _enter_sandbox(workdir)
+    agent = Path("agent.py")
+    assert AGENT_GUARDRAIL in agent.read_text()
+
+    result = runner.invoke(cli, ["tour", "--edit-agent"])
+    assert result.exit_code == 0
+    src = agent.read_text()
+    assert AGENT_GUARDRAIL not in src        # guardrail removed
+    ast.parse(src)                            # still valid Python
+    assert "witch scan agent.py --diff HEAD" in result.output
 
 
 def test_tour_refuses_foreign_directory(runner, workdir):

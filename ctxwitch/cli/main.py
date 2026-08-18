@@ -1031,17 +1031,17 @@ def branches():
 
 
 def _render_cbia_report(report):
-    """Compact CBIA scorecard used by `scan --diff` (shared style w/ diff)."""
+    """CBIA scorecard used by `scan --diff` (full 12-dimension view, shared style w/ diff)."""
     from ctxwitch.core.dimensions import Dimension
 
-    styles = {
-        Severity.NO_CHANGE: "dim",
-        Severity.COSMETIC: "dim",
-        Severity.MINOR: "yellow",
-        Severity.SIGNIFICANT: "bold yellow",
-        Severity.BREAKING: "bold red",
+    severity_styles = {
+        Severity.NO_CHANGE: ("dim", " "),
+        Severity.COSMETIC: ("dim", "."),
+        Severity.MINOR: ("yellow", "~"),
+        Severity.SIGNIFICANT: ("bold yellow", "!"),
+        Severity.BREAKING: ("bold red", "X"),
     }
-    cstyle = styles.get(report.compound_severity, "white")
+    cstyle = severity_styles.get(report.compound_severity, ("white", "?"))[0]
     console.print()
     console.print(
         Panel(
@@ -1050,20 +1050,34 @@ def _render_cbia_report(report):
             border_style=cstyle.replace("bold ", ""),
         )
     )
+
+    impact_by_dim = {i.dimension: i for i in report.impacts}
+
     table = Table(title="Dimension Scorecard", box=box.ROUNDED)
+    table.add_column("", width=3)
     table.add_column("Dimension", style="bold")
     table.add_column("Severity")
     table.add_column("Reason")
-    for imp in sorted(report.impacts, key=lambda i: -i.severity.value):
-        if imp.severity.value <= 0:
-            continue
-        table.add_row(
-            imp.dimension.value,
-            f"[{styles.get(imp.severity, 'white')}]{imp.severity.label}[/]",
-            (imp.reason or "")[:70],
-        )
-    if table.row_count:
-        console.print(table)
+
+    for dim in Dimension:
+        impact = impact_by_dim.get(dim)
+        if impact and impact.severity > Severity.NO_CHANGE:
+            style, icon = severity_styles.get(impact.severity, ("white", "?"))
+            table.add_row(
+                f"[{style}]{icon}[/{style}]",
+                dim.display_name,
+                f"[{style}]{impact.severity.label}[/{style}]",
+                (impact.reason or "")[:80],
+            )
+        else:
+            table.add_row(
+                "[dim]—[/]",
+                f"[dim]{dim.display_name}[/]",
+                "[dim]No Change[/]",
+                "[dim]—[/]",
+            )
+
+    console.print(table)
 
 
 @cli.command()
@@ -1114,6 +1128,17 @@ def scan(path, framework, agent, ref, as_json, judge):
                     f"[dim](dynamic — not statically analyzable)[/]"
                 )
         _render_cbia_report(report)
+        # Where to go next.
+        if _in_tour_sandbox():
+            console.print(
+                "\n[dim]↳ That's Path A ✓  See the governance workflow (Path B):[/] "
+                "[bold cyan]witch tour[/][dim]  ·  start over:[/] [bold]witch tour --reset[/]"
+            )
+        else:
+            console.print(
+                "\n[dim]↳ Score every change automatically:[/] [bold cyan]witch ci[/] "
+                "[dim]in your pipeline, or add the ctxwitch GitHub Action.[/]"
+            )
         # exit code mirrors severity so scan is CI-usable
         sys.exit(2 if report.compound_severity >= Severity.BREAKING else 0)
 
@@ -1145,6 +1170,25 @@ def scan(path, framework, agent, ref, as_json, judge):
             title=f"{snap.name}  [dim]({snap.source_framework} · {p.name}:{snap.source_line})[/]",
             border_style="cyan",
         ))
+
+    # Nudge toward the scoring step. In the tour, offer to make the change for them.
+    if _in_tour_sandbox() and p.name == "agent.py":
+        console.print(
+            "[dim]↳ Next: make a sample change —[/] [bold cyan]witch tour --edit-agent[/] "
+            "[dim](or edit agent.py), then[/] [bold cyan]witch scan agent.py --diff HEAD[/][dim].[/]"
+        )
+    elif _git_show(p, "HEAD") is not None:
+        console.print(
+            f"[dim]↳ Next: edit {p.name}, then[/] "
+            f"[bold]witch scan {p.name} --diff HEAD[/] "
+            f"[dim]to score the change.[/]"
+        )
+
+
+def _in_tour_sandbox() -> bool:
+    """True when the cwd is a `witch tour` sandbox (so scan can give tour-aware hints)."""
+    from pathlib import Path as _Path
+    return (_Path.cwd() / ".ctxwitch" / "tour.yaml").exists()
 
 
 def _git_show(path, ref: str):
