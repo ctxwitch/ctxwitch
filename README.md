@@ -30,6 +30,23 @@ The tour drops you into a disposable sandbox agent and walks you through the
 whole loop — behavioral diff, commit, branch, a Breaking change, a Context PR,
 and the eval gate that blocks it. Everything runs locally; no API key needed.
 
+## The same scan, on every pull request
+
+Wire ctxwitch into CI and every PR gets a behavioral-impact comment — each change's severity, the dimension it touches, and whether it should block the merge:
+
+![ctxwitch GitHub Action — a behavioral-scan comment on a pull request, flagging a removed guardrail and a temperature bump as Breaking and blocking the merge](https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/github-action-comment.png)
+
+Add it in one step — the same scan, gated on every pull request:
+
+```yaml
+# .github/workflows/agent-scan.yml
+- uses: ctxwitch/ctxwitch@v0
+  with:
+    fail-on: breaking        # breaking | significant | minor | never
+```
+
+Runs entirely in your CI — no telemetry, no account, nothing (no prompts, no code) leaves your infrastructure. [Full workflow file ↓](#set-up-the-github-action)
+
 ctxwitch is the reference implementation of [Context Change Impact Analysis (CCIA)](https://doi.org/10.5281/zenodo.20741295) — a discipline for predicting how changes to an AI agent's context configuration affect its observable behavior. The core engine, CBIA (Compound Behavioral Impact Analysis), is a 6-tier pipeline that scores any context change across 12 behavioral dimensions at 5 severity levels, deterministically, in under 100ms, without LLM inference.
 
 ## The Problem
@@ -87,12 +104,11 @@ That gives you two clean ways in, for two stages of adoption:
 Start by scanning your code today; graduate to witch.yaml when you want the full
 review workflow below.
 
-## Behavioral scans on every PR (GitHub Action)
+## Set up the GitHub Action
 
-Add ctxwitch to CI and every pull request gets a behavioral-impact comment — the
-severity of each change, the dimension it affects, and whether it should block.
-Copy [docs/examples/behavioral-scan.yml](docs/examples/behavioral-scan.yml) into
-`.github/workflows/` in your repo:
+The [behavioral-scan comment shown above](#the-same-scan-on-every-pull-request) is
+one workflow file. Copy [docs/examples/behavioral-scan.yml](docs/examples/behavioral-scan.yml)
+into `.github/workflows/` in your repo for the full setup:
 
 ```yaml
 name: Agent behavioral scan
@@ -111,10 +127,6 @@ jobs:
         with:
           fail-on: breaking     # breaking | significant | minor | never
 ```
-
-The PR comment looks like this:
-
-![ctxwitch GitHub Action — a behavioral-scan comment on a pull request, flagging a removed guardrail and a temperature bump as Breaking and blocking the merge](https://raw.githubusercontent.com/ctxwitch/ctxwitch/main/docs/github-action-comment.png)
 
 **It runs entirely in your CI.** The scan uses your own git history and your own
 `GITHUB_TOKEN` to post the comment — ctxwitch sends **no telemetry**, needs no
