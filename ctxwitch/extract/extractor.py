@@ -10,6 +10,7 @@ surface at two git revisions and diff *those*, not the raw text.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -118,6 +119,73 @@ def _config_file_snapshot(source: str, source_file: str) -> Optional[BehavioralS
     )
 
 
+# A module-level constant whose name looks like a prompt/instruction.
+_PROMPT_NAME = re.compile(
+    r"(?:^|_)(?:system_?prompt|sys_?prompt|prompt|instructions?|"
+    r"system_?message|persona|backstory)(?:_|$)",
+    re.IGNORECASE,
+)
+_MIN_PROMPT_LEN = 40
+
+
+def _const_str(node: ast.AST) -> Optional[str]:
+    """Return the string value of a str constant / simple str concatenation."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _const_str(node.left)
+        right = _const_str(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
+def _python_prompt_module_snapshot(
+    tree: ast.Module, source_file: str
+) -> Optional[BehavioralSnapshot]:
+    """Fallback for Python files that *are* prompt definitions.
+
+    Many agents keep their system prompt in a plain ``prompts.py`` /
+    ``system_prompt.py`` as module-level string constants
+    (``SYSTEM_PROMPT = "..."``) with no framework constructor to match. When no
+    adapter claimed anything, treat those constants as the behavioral surface —
+    the same idea as reading a ``.md`` prompt file, so a change to the prompt is
+    still diffed instead of silently dropped.
+
+    Only fires on substantial, prompt-named string constants, so ordinary code
+    files (which have no such constants) produce nothing and stay a clean miss.
+    """
+    found: List[tuple] = []  # (lineno, name, value)
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1):
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or not _PROMPT_NAME.search(target.id):
+            continue
+        value = _const_str(node.value)
+        if value is not None and len(value.strip()) >= _MIN_PROMPT_LEN:
+            found.append((getattr(node, "lineno", 0), target.id, value.strip()))
+
+    if not found:
+        return None
+
+    found.sort(key=lambda t: t[0])
+    # One constant: use it directly. Several: label and concatenate in source
+    # order so a change to any one of them shows up in the diff.
+    if len(found) == 1:
+        prompt = found[0][2]
+    else:
+        prompt = "\n\n".join(f"# {name}\n{val}" for _, name, val in found)
+
+    return BehavioralSnapshot(
+        name=Path(source_file).stem or "prompt",
+        system_prompt=prompt,
+        source_framework="python-prompt-module",
+        source_file=source_file,
+        source_line=found[0][0],
+    )
+
+
 def extract_snapshots(
     source: str,
     source_file: str = "<string>",
@@ -172,6 +240,13 @@ def extract_snapshots(
             except Exception:
                 # A malformed call must never crash a scan of a whole repo.
                 continue
+
+    if not snapshots:
+        # No framework constructor matched. The file may still *be* a prompt
+        # definition (module-level SYSTEM_PROMPT = "..."); read that if present.
+        fallback = _python_prompt_module_snapshot(tree, source_file)
+        if fallback is not None:
+            return [fallback]
 
     snapshots.sort(key=lambda s: s.source_line)
     return snapshots

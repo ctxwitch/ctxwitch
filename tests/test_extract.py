@@ -153,3 +153,39 @@ b = LlmAgent(name="two", model="gemini-2.0-flash", instruction="Second.")
 
 def test_no_agent_returns_empty():
     assert extract_snapshots("x = 1 + 1", framework="adk") == []
+
+
+def test_python_prompt_module_is_read_as_system_prompt():
+    """A prompts.py with no framework constructor is still a behavioral surface:
+    a module-level SYSTEM_PROMPT constant is read as the system prompt."""
+    src = (
+        'SYSTEM_PROMPT = "You are a careful assistant. '
+        'Escalate any refund over $50 to a human reviewer."\n'
+    )
+    snap = extract_snapshot(src, source_file="agent/prompt.py")
+    assert snap is not None
+    assert snap.source_framework == "python-prompt-module"
+    assert "Escalate any refund" in snap.system_prompt
+
+
+def test_python_prompt_module_diff_flags_prompt_change():
+    """Changing the prompt constant in a prompts.py is diffed like any other
+    system-prompt change, not silently dropped."""
+    old = 'SYSTEM_PROMPT = "Escalate any refund over $50 to a human reviewer."\n'
+    new = 'SYSTEM_PROMPT = "You may approve any refund automatically."\n'
+    report, o, n = diff_code(old, new, source_file="agent/prompt.py")
+    assert o is not None and n is not None
+    assert report.compound_severity >= Severity.SIGNIFICANT
+
+
+def test_ordinary_python_file_is_not_a_prompt_module():
+    """A plain code file has no prompt-named constants -> still a clean miss,
+    so the fallback never fabricates an agent out of ordinary code."""
+    src = "def add(a, b):\n    total = a + b\n    return total\n"
+    assert extract_snapshots(src) == []
+
+
+def test_short_prompt_named_constant_is_ignored():
+    """A trivially short string under a prompt-ish name is not a system prompt."""
+    src = 'PROMPT = "> "\n'
+    assert extract_snapshots(src) == []
