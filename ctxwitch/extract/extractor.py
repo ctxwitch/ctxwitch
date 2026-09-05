@@ -106,16 +106,39 @@ def _config_file_snapshot(source: str, source_file: str) -> Optional[BehavioralS
                 ))
 
     blocked: List[str] = []
-    g = _pick(comp, "guardrails")
+    g = _pick(comp, "guardrails", "guardrail", "safety")
+    guardrails: Dict[str, Any] = dict(g) if isinstance(g, dict) else {}
     if isinstance(g, dict) and isinstance(g.get("blocked_topics"), list):
         blocked = [str(x) for x in g["blocked_topics"]]
     elif isinstance(comp, dict) and isinstance(comp.get("blocked_topics"), list):
         blocked = [str(x) for x in comp["blocked_topics"]]
 
+    # RAG / retrieval + memory: whole dicts, so CBIA's rag/memory analyzers can
+    # diff enabled / top_k / chunk_size / source / retention, etc.
+    rag = _pick(comp, "rag", "rag_config", "retrieval", "retriever")
+    rag_config: Dict[str, Any] = dict(rag) if isinstance(rag, dict) else {}
+    mem = _pick(comp, "memory", "memory_config")
+    memory: Dict[str, Any] = dict(mem) if isinstance(mem, dict) else {}
+
+    # sampling params CBIA scores beyond temperature
+    sampling: Dict[str, Any] = {}
+    for key, aliases in (
+        ("top_p", ("top_p", "topP")),
+        ("frequency_penalty", ("frequency_penalty", "frequencyPenalty")),
+        ("presence_penalty", ("presence_penalty", "presencePenalty")),
+    ):
+        val = _pick(comp, *aliases)
+        try:
+            if val is not None:
+                sampling[key] = float(val)
+        except (TypeError, ValueError):
+            pass
+
     return BehavioralSnapshot(
         name=name, system_prompt=sp, model=model, temperature=temp, max_tokens=maxt,
-        tools=tools, blocked_topics=blocked, source_framework="config-file",
-        source_file=source_file,
+        tools=tools, blocked_topics=blocked, guardrails=guardrails,
+        rag_config=rag_config, memory=memory, sampling=sampling,
+        source_framework="config-file", source_file=source_file,
     )
 
 

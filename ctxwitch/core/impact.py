@@ -57,6 +57,45 @@ def analyze_component_structural(
     if old_max and new_max:
         impacts.extend(analyze_max_tokens_change(old_max, new_max))
 
+    impacts.extend(analyze_sampling_params(old_comp, new_comp))
+
+    return impacts
+
+
+# Sampling knobs beyond temperature that shift output distribution.
+_SAMPLING_PARAMS = {
+    "top_p": "Nucleus-sampling cutoff",
+    "frequency_penalty": "Repetition penalty (frequency)",
+    "presence_penalty": "Topic-novelty penalty (presence)",
+}
+
+
+def analyze_sampling_params(
+    old_comp: Dict[str, Any], new_comp: Dict[str, Any]
+) -> List[DimensionImpact]:
+    """Score changes to top_p / frequency_penalty / presence_penalty.
+
+    These move the output distribution like temperature does, just less
+    sharply, so a change is INTERACTION_STYLE — MINOR by default, SIGNIFICANT
+    for a large swing. Only fires when both sides declare the value.
+    """
+    impacts: List[DimensionImpact] = []
+    for key, label in _SAMPLING_PARAMS.items():
+        old_v, new_v = old_comp.get(key), new_comp.get(key)
+        if not isinstance(old_v, (int, float)) or not isinstance(new_v, (int, float)):
+            continue
+        delta = abs(new_v - old_v)
+        if delta == 0:
+            continue
+        # top_p is on 0–1; penalties on roughly -2–2. Scale the threshold.
+        big = delta >= (0.2 if key == "top_p" else 0.5)
+        impacts.append(DimensionImpact(
+            dimension=Dimension.INTERACTION_STYLE,
+            severity=Severity.SIGNIFICANT if big else Severity.MINOR,
+            reason=f"{label} changed from {old_v} to {new_v}. Output distribution shifts.",
+            old_signal=str(old_v),
+            new_signal=str(new_v),
+        ))
     return impacts
 
 

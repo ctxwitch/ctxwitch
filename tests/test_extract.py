@@ -189,3 +189,31 @@ def test_short_prompt_named_constant_is_ignored():
     """A trivially short string under a prompt-ish name is not a system prompt."""
     src = 'PROMPT = "> "\n'
     assert extract_snapshots(src) == []
+
+
+def test_config_rag_change_is_not_no_change():
+    """A .yaml change to a RAG setting must be scored, not read as NO_CHANGE."""
+    old = 'model: gpt-4o\nrag:\n  enabled: true\n  top_k: 5\n'
+    new = 'model: gpt-4o\nrag:\n  enabled: true\n  top_k: 20\n'
+    report, o, n = diff_code(old, new, source_file="agent.yaml")
+    assert o is not None and n is not None
+    assert report.compound_severity >= Severity.MINOR
+    assert any("top_k" in d.reason for d in report.changed_dimensions)
+
+
+def test_config_guardrail_removal_flags_safety():
+    """Removing a blocked topic in config is a SAFETY-relevant change."""
+    old = 'model: gpt-4o\nguardrails:\n  blocked_topics: [medical, legal]\n'
+    new = 'model: gpt-4o\nguardrails:\n  blocked_topics: [medical]\n'
+    report, o, n = diff_code(old, new, source_file="agent.json".replace(".json", ".yaml"))
+    assert report.compound_severity >= Severity.SIGNIFICANT
+
+
+def test_config_top_p_change_is_scored():
+    """A top_p change in config is picked up (sampling param), not dropped."""
+    old = 'model: gpt-4o\ntop_p: 0.9\n'
+    new = 'model: gpt-4o\ntop_p: 0.4\n'
+    report, o, n = diff_code(old, new, source_file="agent.yaml")
+    assert report.compound_severity >= Severity.MINOR
+    assert any("top_p" in d.reason.lower() or "nucleus" in d.reason.lower()
+               for d in report.changed_dimensions)

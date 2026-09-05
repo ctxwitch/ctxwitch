@@ -65,6 +65,13 @@ class BehavioralSnapshot:
     max_tokens: Optional[int] = None
     tools: List[ToolSpec] = field(default_factory=list)
     blocked_topics: List[str] = field(default_factory=list)
+    # Richer behavioral surface, mostly from declarative config files. CBIA
+    # already scores each of these; they were simply never extracted before, so
+    # a RAG / memory / guardrail / sampling change in a .yaml read as NO_CHANGE.
+    rag_config: Dict[str, Any] = field(default_factory=dict)
+    memory: Dict[str, Any] = field(default_factory=dict)
+    guardrails: Dict[str, Any] = field(default_factory=dict)
+    sampling: Dict[str, Any] = field(default_factory=dict)  # top_p, penalties, …
     source_framework: str = ""
     source_file: str = ""
     source_line: int = 0
@@ -83,8 +90,22 @@ class BehavioralSnapshot:
             components["max_tokens"] = self.max_tokens
         if self.tools:
             components["tool_definitions"] = [t.to_dict() for t in self.tools]
-        if self.blocked_topics:
-            components["guardrails"] = {"blocked_topics": list(self.blocked_topics)}
+
+        # guardrails: prefer the full extracted dict, fall back to blocked_topics
+        guardrails = dict(self.guardrails) if self.guardrails else {}
+        if self.blocked_topics and "blocked_topics" not in guardrails:
+            guardrails["blocked_topics"] = list(self.blocked_topics)
+        if guardrails:
+            components["guardrails"] = guardrails
+
+        if self.rag_config:
+            components["rag_config"] = dict(self.rag_config)
+        if self.memory:
+            components["memory"] = dict(self.memory)
+        # sampling params (top_p, frequency_penalty, …) live at the top of
+        # components so CBIA's Tier-1 sampling analyzer can diff them.
+        for k, v in self.sampling.items():
+            components[k] = v
 
         return {
             "version": "v0.0.0",
