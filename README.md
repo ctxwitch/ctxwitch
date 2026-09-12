@@ -61,6 +61,8 @@ Today a one-word prompt tweak and a removed guardrail flow through the same pipe
 
 ctxwitch adds a **behavioral-risk analysis layer** before evaluation and deployment. It analyzes each change to an agent's context, classifies which behavioral dimensions are affected and how severely, and routes higher-risk changes to deeper testing or human review -- while low-risk edits pass straight through.
 
+Put another way: it's **test-impact analysis for agent behavior** -- a deterministic pre-screen that decides *which* changes are even worth a full eval run, so you spend expensive evaluation where the risk actually is instead of on every edit.
+
 ```
 WITHOUT ctxwitch                 WITH ctxwitch
 -------------------------------  --------------------------------
