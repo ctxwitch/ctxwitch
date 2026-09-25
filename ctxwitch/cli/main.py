@@ -1106,6 +1106,8 @@ def scan(path, framework, agent, ref, as_json, judge):
 
     p = _Path(path)
     new_source = p.read_text(encoding="utf-8")
+    if not as_json:
+        _note_out_of_scope(p)
 
     # ── --diff mode: this is how you "point at your own code + git diff" ──
     if ref is not None:
@@ -1185,6 +1187,45 @@ def scan(path, framework, agent, ref, as_json, judge):
         )
 
 
+def _note_out_of_scope(path) -> None:
+    """Tell the user when `witch ci` wouldn't score this file by default."""
+    from ctxwitch.extract.scope import AGENT, CODING_ASSISTANT, classify_path
+
+    scope = classify_path(_repo_relative(path))
+    if scope.surface == AGENT:
+        return
+    how = ("--include-coding-assistant" if scope.surface == CODING_ASSISTANT
+           else "--include-path")
+    console.print(
+        f"[yellow]note:[/] {scope.path} looks like {scope.label}, not the product "
+        f"agent — [bold]witch ci[/] skips it unless run with {how}."
+    )
+
+
+def _repo_relative(path) -> str:
+    """`path` relative to its git work tree (or the cwd), in posix form.
+
+    Scope rules key off repo-relative paths; an absolute path would drag in
+    whatever directories the checkout happens to live under.
+    """
+    import subprocess
+    from pathlib import Path as _Path
+
+    p = _Path(path).resolve()
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], cwd=p.parent,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return p.relative_to(_Path(top).resolve()).as_posix()
+    except Exception:
+        pass
+    try:
+        return p.relative_to(_Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return p.name
+
+
 def _in_tour_sandbox() -> bool:
     """True when the cwd is a `witch tour` sandbox (so scan can give tour-aware hints)."""
     from pathlib import Path as _Path
@@ -1219,11 +1260,22 @@ def _git_show(path, ref: str):
 @click.option("--framework", default=None, help="Force an extractor adapter (adk, generic).")
 @click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
 @click.option("--output", "out_path", default=None, help="Write the report to this file instead of stdout.")
-def ci(base, head, fail_on, framework, fmt, out_path):
+@click.option("--include-coding-assistant", is_flag=True,
+              help="Also analyze coding-assistant instructions (CLAUDE.md, AGENTS.md, .claude/, "
+                   "copilot-instructions). Off by default: they steer the dev assistant, "
+                   "not the product agent.")
+@click.option("--include-path", "include_paths", multiple=True, metavar="GLOB",
+              help="Always analyze paths matching this glob, even if the default rules "
+                   "exclude them (eval/, vendor/, generated data …). Repeatable.")
+def ci(base, head, fail_on, framework, fmt, out_path, include_coding_assistant, include_paths):
     """Scan a PR's changed files with CBIA and emit a report (for CI / the Action).
 
     Runs entirely on local git history — no network, no telemetry. Exits 2 when
     the aggregated change is at/above --fail-on, so it can gate a merge.
+
+    Only the product agent's surface is scored: eval/benchmark prompts,
+    vendored code, generated data, packaging manifests and docs are listed as
+    skipped, and byte-identical moves are reported as moves.
 
         witch ci --base origin/main --fail-on breaking
     """
@@ -1232,7 +1284,11 @@ def ci(base, head, fail_on, framework, fmt, out_path):
     from ctxwitch.ci import run_ci
     from ctxwitch.core.dimensions import Severity
 
-    report = run_ci(base=base, head=head, framework=framework, fail_on=fail_on)
+    report = run_ci(
+        base=base, head=head, framework=framework, fail_on=fail_on,
+        include_coding_assistant=include_coding_assistant,
+        include_paths=include_paths,
+    )
 
     if fmt == "json":
         rendered = _json.dumps(report.to_dict(), indent=2)

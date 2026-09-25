@@ -139,3 +139,163 @@ def test_json_shape():
     assert d["compound_severity"] == "Significant"
     assert d["blocked"] is False
     assert d["changes"][0]["advisory"]
+
+
+# ── scope: only the product agent's surface is scored ───────────────────────
+
+
+def _write(repo, rel, text):
+    p = repo / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+
+
+def _move(repo, old, new):
+    (repo / new).parent.mkdir(parents=True, exist_ok=True)
+    (repo / old).rename(repo / new)
+
+
+def test_ci_skips_eval_vendored_generated_and_pipeline_files(repo):
+    paths = [
+        "evaluation/agent.py",
+        "external_tools/ai_scientist/agent.py",
+        "apps/collect-trace/agent.py",
+        "generated/witch.yaml",
+    ]
+    for rel in paths:
+        _write(repo, rel, YAML_V1 if rel.endswith(".yaml") else ADK_V1)
+    base = _commit(repo, "baseline")
+    for rel in paths:
+        _write(repo, rel, YAML_V2 if rel.endswith(".yaml") else ADK_V2)
+    _commit(repo, "pr")
+
+    report = run_ci(base=base, repo_root=repo)
+    assert report.changes == []
+    assert report.blocked is False
+    assert {s.file for s in report.skipped} == set(paths)
+    reasons = {s.file: s.reason for s in report.skipped}
+    assert reasons["evaluation/agent.py"] == "evaluation / benchmark prompt"
+    assert reasons["external_tools/ai_scientist/agent.py"] == "vendored third-party code"
+    assert reasons["apps/collect-trace/agent.py"] == "offline data pipeline"
+    assert reasons["generated/witch.yaml"] == "generated data / lockfile"
+
+
+def test_ci_still_scores_the_product_agent_next_to_skipped_files(repo):
+    _write(repo, "agent.py", ADK_V1)
+    _write(repo, "evaluation/agent.py", ADK_V1)
+    base = _commit(repo, "baseline")
+    _write(repo, "agent.py", ADK_V2)
+    _write(repo, "evaluation/agent.py", ADK_V2)
+    _commit(repo, "pr")
+
+    report = run_ci(base=base, repo_root=repo)
+    assert {c.file for c in report.changes} == {"agent.py"}
+    assert report.blocked is True
+    assert [s.file for s in report.skipped] == ["evaluation/agent.py"]
+
+
+def test_ci_include_path_overrides_exclusion(repo):
+    _write(repo, "evaluation/agent.py", ADK_V1)
+    base = _commit(repo, "baseline")
+    _write(repo, "evaluation/agent.py", ADK_V2)
+    _commit(repo, "pr")
+
+    report = run_ci(base=base, repo_root=repo, include_paths=["evaluation/*"])
+    assert {c.file for c in report.changes} == {"evaluation/agent.py"}
+    assert report.skipped == []
+
+
+def test_ci_coding_assistant_config_is_opt_in_and_labeled(repo):
+    rel = ".claude/skills/review/witch.yaml"
+    _write(repo, rel, YAML_V1)
+    base = _commit(repo, "baseline")
+    _write(repo, rel, YAML_V2)
+    _commit(repo, "pr")
+
+    default = run_ci(base=base, repo_root=repo)
+    assert default.changes == []
+    assert default.skipped[0].surface == "coding-assistant"
+    assert "--include-coding-assistant" in default.to_markdown()
+
+    opted = run_ci(base=base, repo_root=repo, include_coding_assistant=True)
+    assert opted.changes
+    assert {c.surface for c in opted.changes} == {"coding-assistant"}
+    assert "[coding-assistant]" in opted.to_markdown()
+    assert opted.to_dict()["changes"][0]["surface"] == "coding-assistant"
+
+
+def test_ci_reports_pure_move_as_move_not_delete_plus_add(repo):
+    _write(repo, "crates/goose/agent.py", ADK_V1)
+    base = _commit(repo, "baseline")
+    _move(repo, "crates/goose/agent.py", "crates/goose-cm/agent.py")
+    _commit(repo, "move")
+
+    report = run_ci(base=base, repo_root=repo)
+    assert report.changes == []
+    assert report.blocked is False
+    assert [(m.old_file, m.new_file) for m in report.moves] == [
+        ("crates/goose/agent.py", "crates/goose-cm/agent.py")
+    ]
+    md = report.to_markdown()
+    assert "Moved without content change" in md
+    assert "`crates/goose/agent.py` → `crates/goose-cm/agent.py`" in md
+    assert report.to_dict()["moves"] == [
+        {"from": "crates/goose/agent.py", "to": "crates/goose-cm/agent.py"}
+    ]
+
+
+def test_ci_move_in_working_tree_is_a_move(repo):
+    (repo / "witch.yaml").write_text(YAML_V1)
+    base = _commit(repo, "baseline")
+    (repo / "witch.yaml").rename(repo / "agent.yaml")
+    _run(repo, "add", "-A")   # staged, not committed: head=None reads the worktree
+
+    report = run_ci(base=base, repo_root=repo)
+    assert report.changes == []
+    assert [(m.old_file, m.new_file) for m in report.moves] == [("witch.yaml", "agent.yaml")]
+
+
+def test_ci_move_with_edit_is_still_analyzed(repo):
+    _write(repo, "a/agent.py", ADK_V1)
+    base = _commit(repo, "baseline")
+    _move(repo, "a/agent.py", "b/agent.py")
+    _write(repo, "b/agent.py", ADK_V2)
+    _commit(repo, "move+edit")
+
+    report = run_ci(base=base, repo_root=repo)
+    assert report.moves == []
+    assert report.changes
+
+
+def test_ci_move_of_non_agent_file_is_not_reported(repo):
+    _write(repo, "a/utils.py", "def add(a, b):\n    return a + b\n")
+    base = _commit(repo, "baseline")
+    _move(repo, "a/utils.py", "b/utils.py")
+    _commit(repo, "move")
+
+    report = run_ci(base=base, repo_root=repo)
+    assert report.moves == []
+    assert report.changes == []
+
+
+def test_cli_ci_include_coding_assistant_flag(repo, monkeypatch):
+    from click.testing import CliRunner
+
+    from ctxwitch.cli.main import cli
+
+    rel = ".claude/skills/review/witch.yaml"
+    _write(repo, rel, YAML_V1)
+    base = _commit(repo, "baseline")
+    _write(repo, rel, YAML_V2)
+    _commit(repo, "pr")
+    monkeypatch.chdir(repo)
+
+    runner = CliRunner()
+    off = runner.invoke(cli, ["ci", "--base", base, "--format", "json"])
+    assert off.exit_code == 0, off.output
+    assert '"changes": []' in off.output
+
+    on = runner.invoke(cli, ["ci", "--base", base, "--format", "json",
+                             "--include-coding-assistant"])
+    assert on.exit_code == 2, on.output   # guardrail removal → Breaking → blocked
+    assert '"surface": "coding-assistant"' in on.output

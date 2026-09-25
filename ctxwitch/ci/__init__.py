@@ -5,6 +5,6 @@ locally in the user's CI against their own git history; nothing leaves their
 infrastructure (no telemetry, no account, no network calls).
 """
 
-from ctxwitch.ci.runner import CIChange, CIReport, run_ci
+from ctxwitch.ci.runner import CIChange, CIMove, CIReport, CISkip, run_ci
 
-__all__ = ["CIChange", "CIReport", "run_ci"]
+__all__ = ["CIChange", "CIMove", "CIReport", "CISkip", "run_ci"]
