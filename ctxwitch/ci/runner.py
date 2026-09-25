@@ -6,8 +6,10 @@ Given a base git ref and a head (default: working tree / HEAD), this:
      generated data etc. are listed as skipped, not scored,
   2. reports byte-identical delete + add pairs as moves, not as changes,
   3. for each witch.yaml-style context file, diffs it via CBIA,
-  4. for each agent-code file (.py), extracts the behavioral surface at both
-     revisions and diffs *that* via CBIA,
+  4. for every other agent file — code (.py), prompt files (.md/.txt …) and
+     config (.yaml/.json) — extracts the behavioral surface at both revisions
+     and diffs *that* via CBIA, routed by the extractor's own file kind so
+     `witch ci` and `witch scan --diff` score the same files the same way,
   5. aggregates all per-dimension impacts, attributes them to files, and
      computes an overall compound severity + a pass/block verdict.
 
@@ -25,6 +27,7 @@ import yaml
 
 from ctxwitch.core.behavioral import analyze_behavioral_impact
 from ctxwitch.core.dimensions import Severity
+from ctxwitch.extract.extractor import _file_kind
 from ctxwitch.extract.scope import (
     AGENT,
     CODING_ASSISTANT,
@@ -253,52 +256,78 @@ def run_ci(
     return report
 
 
+def _ci_kind(path) -> Optional[str]:
+    """The extractor's file kind for a changed path, or None if CI skips it.
+
+    The extractor treats extensionless names as Python (back-compat for string
+    callers); in a repo those are Makefiles and Dockerfiles, so skip them.
+    """
+    kind = _file_kind(str(path))
+    if kind == "other" or (kind == "python" and not str(path).lower().endswith(".py")):
+        return None
+    return kind
+
+
 def _analyze_file(path, old_src, new_src, framework):
     """Return [(dimension, severity, reason)] for one changed file, or []."""
-    p = str(path).lower()
+    kind = _ci_kind(path)
+    if kind is None:
+        return []
     try:
-        if p.endswith((".yaml", ".yml")):
-            return _analyze_yaml(old_src, new_src)
-        if p.endswith(".py"):
-            return _analyze_code(old_src, new_src, framework)
+        if kind == "config" and _is_yaml(path):
+            old, new = _load_yaml(old_src), _load_yaml(new_src)
+            # A witch.yaml context keeps its native CBIA path.
+            if _is_context(old) or _is_context(new):
+                return _impacts(analyze_behavioral_impact(old or {}, new or {}))
+        return _analyze_code(path, old_src, new_src, framework)
     except Exception:
         # A single malformed file must never fail the whole CI run.
         return []
-    return []
 
 
 def _has_surface(path, src, framework) -> bool:
     """Would this file be analyzed as an agent surface at all?"""
-    p = str(path).lower()
+    kind = _ci_kind(path)
+    if kind is None:
+        return False
     try:
-        if p.endswith((".yaml", ".yml")):
-            return _is_context(yaml.safe_load(src))
-        if p.endswith(".py"):
-            from ctxwitch.extract.extractor import extract_snapshots
+        if kind == "config" and _is_yaml(path) and _is_context(_load_yaml(src)):
+            return True
+        from ctxwitch.extract.extractor import extract_snapshots
 
-            return bool(extract_snapshots(src, source_file=str(path), framework=framework))
+        snaps = extract_snapshots(src, source_file=str(path), framework=framework)
+        if kind == "python":
+            return bool(snaps)
+        # The prompt/config readers return a snapshot for any text / any dict;
+        # only count one that actually carries behavioral fields.
+        return any(_carries_behavior(s) for s in snaps)
     except Exception:
         return False
-    return False
 
 
-def _analyze_yaml(old_src, new_src):
-    old = yaml.safe_load(old_src) if old_src else {}
-    new = yaml.safe_load(new_src) if new_src else {}
-    # Only treat it as an agent context if it carries behavioral components.
-    if not _is_context(old) and not _is_context(new):
-        return []
-    report = analyze_behavioral_impact(old or {}, new or {})
-    return _impacts(report)
+def _carries_behavior(snap) -> bool:
+    return bool(
+        snap.system_prompt.strip() or snap.model or snap.temperature is not None
+        or snap.max_tokens is not None or snap.tools or snap.blocked_topics
+        or snap.guardrails or snap.rag_config or snap.memory or snap.sampling
+    )
 
 
-def _analyze_code(old_src, new_src, framework):
+def _is_yaml(path) -> bool:
+    return str(path).lower().endswith((".yaml", ".yml"))
+
+
+def _load_yaml(src):
+    return yaml.safe_load(src) if src else {}
+
+
+def _analyze_code(path, old_src, new_src, framework):
     from ctxwitch.extract.extractor import diff_code
 
     if not old_src and not new_src:
         return []
     report, old_snap, new_snap = diff_code(
-        old_src or "", new_src or "", framework=framework
+        old_src or "", new_src or "", source_file=str(path), framework=framework
     )
     if old_snap is None and new_snap is None:
         return []  # no agent in this file
@@ -341,7 +370,7 @@ def _changed_files(base: str, head: Optional[str], root: Path) -> List[str]:
     files = []
     for line in out.splitlines():
         line = line.strip()
-        if line.endswith((".py", ".yaml", ".yml")):
+        if line and _ci_kind(line):
             files.append(line)
     return files
 

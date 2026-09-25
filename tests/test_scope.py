@@ -158,6 +158,13 @@ def test_vendored_lookalikes_stay_agent(path):
     (".github/workflows/ci.yml", "packaging"),
     ("docker-compose.yml", "packaging"),
     ("setup.py", "packaging"),
+    ("requirements.txt", "packaging"),
+    ("requirements-dev.txt", "packaging"),
+    ("dev-requirements.txt", "packaging"),
+    ("requirements/base.txt", "packaging"),
+    ("constraints.txt", "packaging"),
+    ("CMakeLists.txt", "packaging"),
+    ("public/robots.txt", "packaging"),
 ])
 def test_generated_and_packaging_are_excluded(path, reason):
     assert _reason(path) == reason
@@ -181,12 +188,17 @@ def test_generated_lookalikes_stay_agent(path):
 @pytest.mark.parametrize("path", [
     "README.md", "docs/guide.md", "docs/blog/posts/hot-reload.md",
     "CHANGELOG.md", "SECURITY.md", "pkg/readme.txt",
+    "ROADMAP.md", "ARCHITECTURE.md", "TODO.md", ".changeset/brave-owls.md",
+    "llms.txt",
 ])
 def test_docs_are_excluded(path):
     assert _reason(path) == "docs"
 
 
-@pytest.mark.parametrize("path", ["prompts/security.md", "memory/history.md"])
+@pytest.mark.parametrize("path", [
+    "prompts/security.md", "memory/history.md",
+    "prompts/roadmap.md", "prompts/requirements.md", "prompts/requirements_analyst.txt",
+])
 def test_doc_lookalikes_stay_agent(path):
     assert classify_path(path).surface == AGENT
 

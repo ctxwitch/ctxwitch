@@ -80,6 +80,10 @@ _GENERATED_FILE = re.compile(
 # data dumps named *_data.json / *-data.yaml (e.g. generated agent-address registries)
 _DATA_FILE = re.compile(r"(^|[_.-])data\.(json|ya?ml)$", re.I)
 
+# requirements-dev.txt, requirements.lock.txt … but not requirements_analyst.txt
+_REQ_VARIANT = (r"(dev|test|tests|testing|docs?|prod|production|lint|ci|build|"
+                r"base|local|optional|extras?|all|min|lock|py\d*)")
+
 _PACKAGING_FILE = re.compile(
     r"^(package|plugin|manifest|marketplace|composer|bower|lerna|nx|turbo|"
     r"vercel|deno|renovate|jsconfig|tsconfig(\.[\w-]+)?|\.eslintrc|\.prettierrc|"
@@ -87,7 +91,10 @@ _PACKAGING_FILE = re.compile(
     r"^(action|dependabot|codecov|mkdocs|environment|conda|chart|pubspec|"
     r"\.readthedocs|\.pre-commit-config|\.gitlab-ci|\.travis|"
     r"(docker-)?compose(\.[\w-]+)?)\.ya?ml$|"
-    r"^(setup|_version)\.py$",
+    r"^(setup|_version)\.py$|"
+    # plain-text manifests: read as a prompt file they'd score as a prompt edit
+    r"^((dev|test|docs?)[-_])?(requirements|constraints)([-_.]" + _REQ_VARIANT + r")*\.txt$|"
+    r"^(cmakelists|robots|runtime)\.txt$",
     re.I,
 )
 _PACKAGING_DIRS = re.compile(
@@ -146,13 +153,14 @@ _DATA_PIPELINE_DIRS = re.compile(
     re.I,
 )
 
-_DOC_DIRS = re.compile(r"^(docs?|blog|issue_template)$", re.I)
+_DOC_DIRS = re.compile(r"^(docs?|blog|issue_template|\.changesets?)$", re.I)
 # Unambiguous doc names match any case; words that could also name a prompt
 # (`prompts/security.md`, `history.md`) only in the uppercase convention.
 _DOC_FILE = re.compile(
     r"^((?i:readme|changelog|contributing|code_of_conduct|license|licence|"
-    r"pull_request_template)|SECURITY|NOTICE|AUTHORS|SUPPORT|HISTORY|CHANGES|"
-    r"CITATION)(\.[\w.-]+)?$"
+    r"pull_request_template|llms|llms-full)|SECURITY|NOTICE|AUTHORS|SUPPORT|HISTORY|"
+    r"CHANGES|CITATION|ROADMAP|ARCHITECTURE|GOVERNANCE|MAINTAINERS|CONTRIBUTORS|"
+    r"UPGRADING|RELEASING|TODO)(\.[\w.-]+)?$"
 )
 
 
@@ -185,7 +193,8 @@ def classify_path(path: str) -> PathScope:
         return excluded("generated")
 
     if _PACKAGING_FILE.match(name) or any(_PACKAGING_DIRS.match(d) for d in dirs) \
-            or (len(dirs) >= 2 and dirs[-2] == ".github" and dirs[-1] == "workflows"):
+            or (len(dirs) >= 2 and dirs[-2] == ".github" and dirs[-1] == "workflows") \
+            or (name.lower().endswith(".txt") and any(d.lower() == "requirements" for d in dirs)):
         return excluded("packaging")
 
     if name in _CODING_ASSISTANT_FILES \
