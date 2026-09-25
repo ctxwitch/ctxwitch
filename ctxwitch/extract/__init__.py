@@ -24,6 +24,7 @@ from ctxwitch.extract.extractor import (
     extract_snapshot,
     extract_snapshots,
 )
+from ctxwitch.extract.scope import PathScope, classify_path, detect_moves, is_analyzed
 
 # Import adapters for their registration side effects.
 from ctxwitch.extract.adapters import adk as _adk  # noqa: F401
@@ -37,4 +38,8 @@ __all__ = [
     "extract_snapshots",
     "extract_from_file",
     "diff_code",
+    "PathScope",
+    "classify_path",
+    "detect_moves",
+    "is_analyzed",
 ]

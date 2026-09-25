@@ -14,6 +14,14 @@ inputs:
     description: "Force an extractor adapter for agent code (adk, generic). Default: auto-detect."
     required: false
     default: ""
+  include-coding-assistant:
+    description: "Also analyze coding-assistant instructions (CLAUDE.md, AGENTS.md, .claude/, copilot-instructions) (true/false). Off by default: they steer the dev assistant, not the product agent."
+    required: false
+    default: "false"
+  include-paths:
+    description: "Whitespace-separated globs to always analyze, even if the default rules exclude them (eval/, vendor/, generated data …)."
+    required: false
+    default: ""
   comment:
     description: "Post/update a PR comment with the scan report (true/false)."
     required: false
@@ -47,13 +55,21 @@ runs:
     - name: Run behavioral scan
       id: scan
       shell: bash
+      env:
+        CTXWITCH_INCLUDE_CODING_ASSISTANT: ${{ inputs.include-coding-assistant }}
+        CTXWITCH_INCLUDE_PATHS: ${{ inputs.include-paths }}
       run: |
         set +e
         BASE="${{ github.event.pull_request.base.sha }}"
         if [ -z "$BASE" ]; then BASE="HEAD~1"; fi
         FW=""
         if [ -n "${{ inputs.framework }}" ]; then FW="--framework ${{ inputs.framework }}"; fi
-        witch ci --base "$BASE" --fail-on "${{ inputs.fail-on }}" $FW \
+        SCOPE=()
+        if [ "$CTXWITCH_INCLUDE_CODING_ASSISTANT" = "true" ]; then SCOPE+=(--include-coding-assistant); fi
+        set -f
+        for g in $CTXWITCH_INCLUDE_PATHS; do SCOPE+=(--include-path "$g"); done
+        set +f
+        witch ci --base "$BASE" --fail-on "${{ inputs.fail-on }}" $FW "${SCOPE[@]}" \
           --format markdown --output ctxwitch-comment.md
         echo "exit_code=$?" >> "$GITHUB_OUTPUT"
         cat ctxwitch-comment.md >> "$GITHUB_STEP_SUMMARY"
